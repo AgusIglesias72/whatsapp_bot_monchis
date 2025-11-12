@@ -1,45 +1,11 @@
 # nixpacks.toml
-# Configuración para Railway - Instala dependencias de Chromium/Puppeteer
+# Configuración para Railway - Puppeteer con Chromium
 
 [phases.setup]
-nixPkgs = [
-  "nodejs_20",
-  "chromium",
-  "nss",
-  "freetype",
-  "harfbuzz",
-  "ca-certificates",
-  "fontconfig",
-  "libX11",
-  "libXcomposite",
-  "libXcursor",
-  "libXdamage",
-  "libXext",
-  "libXfixes",
-  "libXi",
-  "libXrandr",
-  "libXrender",
-  "libXScrnSaver",
-  "libXtst",
-  "libxcb",
-  "libnss3",
-  "libnspr4",
-  "libatk1.0-0",
-  "libatk-bridge2.0-0",
-  "libcups2",
-  "libdrm",
-  "libgbm",
-  "libasound2",
-  "libpangocairo",
-  "libpango",
-  "libatspi2.0-0"
-]
+nixPkgs = ["nodejs_20", "chromium"]
 
 [phases.install]
 cmds = ["npm ci"]
-
-[phases.build]
-cmds = ["echo 'Build phase'"]
 
 [start]
 cmd = "npm start"

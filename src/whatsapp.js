@@ -11,24 +11,31 @@ let isReady = false;
  * @returns {Client} - Instancia del cliente de WhatsApp
  */
 export function initializeWhatsApp(onMessageReceived) {
+  // Configuración de Puppeteer para Railway
+  const puppeteerConfig = {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--single-process',
+      '--disable-gpu',
+      '--disable-features=AudioServiceOutOfProcess'
+    ]
+  };
+
+  // En Railway, Chromium se instala automáticamente con nixpacks
+  // No especificamos executablePath para que Puppeteer lo encuentre automáticamente
+
   client = new Client({
     authStrategy: new LocalAuth({
       clientId: 'whatsapp-bot-main',
       dataPath: './.wwebjs_auth'
     }),
-    puppeteer: {
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',  // ← AGREGAR ESTE
-        '--disable-gpu'
-      ],
-    },
+    puppeteer: puppeteerConfig,
     webVersionCache: {
       type: 'remote',
       remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
