@@ -14,6 +14,7 @@ export function initializeWhatsApp(onMessageReceived) {
   // Configuración de Puppeteer para Railway
   const puppeteerConfig = {
     headless: true,
+    executablePath: '/usr/bin/chromium', // ← AGREGAR ESTA LÍNEA
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -27,15 +28,12 @@ export function initializeWhatsApp(onMessageReceived) {
     ]
   };
 
-  // En Railway, Chromium se instala automáticamente con nixpacks
-  // No especificamos executablePath para que Puppeteer lo encuentre automáticamente
-
   client = new Client({
     authStrategy: new LocalAuth({
       clientId: 'whatsapp-bot-main',
       dataPath: './.wwebjs_auth'
     }),
-    puppeteer: puppeteerConfig,
+    puppeteer: puppeteerConfig, // ← Usar la config de arriba
     webVersionCache: {
       type: 'remote',
       remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
