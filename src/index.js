@@ -30,13 +30,38 @@ function verifyApiKey(req, res, next) {
   next();
 }
 
+// ===== VARIABLES GLOBALES PARA QR =====
+let currentQRCode = null;
+let qrTimestamp = null;
+
 // ===== INICIALIZACIÓN DE WHATSAPP =====
 console.log('🚀 Iniciando servidor del bot de WhatsApp...\n');
 
 // Inicializar cliente de WhatsApp con handler de mensajes
-initializeWhatsApp((message) => {
+const whatsappClient = initializeWhatsApp((message) => {
   handleIncomingMessage(message, VERCEL_WEBHOOK_URL);
 });
+
+// Capturar el QR cuando se genere (para acceso desde frontend)
+const clientInstance = getClient();
+if (clientInstance) {
+  clientInstance.on('qr', (qr) => {
+    currentQRCode = qr;
+    qrTimestamp = new Date().toISOString();
+    console.log('📱 QR Code generado y disponible en /qr-status');
+  });
+
+  clientInstance.on('ready', () => {
+    currentQRCode = null;
+    qrTimestamp = null;
+    console.log('✅ QR limpiado - WhatsApp conectado');
+  });
+
+  clientInstance.on('authenticated', () => {
+    currentQRCode = null;
+    qrTimestamp = null;
+  });
+}
 
 // ===== RUTAS API =====
 
@@ -55,6 +80,42 @@ app.get('/health', (req, res) => {
 });
 
 /**
+ * GET /qr-status
+ * Obtiene el estado de conexión de WhatsApp y QR code si está disponible
+ * Útil para mostrar el QR en el frontend
+ */
+app.get('/qr-status', (req, res) => {
+  if (isClientReady()) {
+    return res.json({
+      status: 'connected',
+      connected: true,
+      qr: null,
+      message: 'WhatsApp ya está conectado',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  if (currentQRCode) {
+    return res.json({
+      status: 'qr_available',
+      connected: false,
+      qr: currentQRCode,
+      generatedAt: qrTimestamp,
+      message: 'Escanea este QR para conectar WhatsApp',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  return res.json({
+    status: 'initializing',
+    connected: false,
+    qr: null,
+    message: 'Inicializando WhatsApp, espera unos segundos...',
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
  * GET /
  * Página de inicio simple
  */
@@ -65,6 +126,7 @@ app.get('/', (req, res) => {
     status: isClientReady() ? 'connected' : 'disconnected',
     endpoints: {
       health: 'GET /health',
+      qrStatus: 'GET /qr-status',
       sendMessage: 'POST /send-message',
       sendContextualMessage: 'POST /send-contextual-message',
       messageTypes: 'GET /message-types',
