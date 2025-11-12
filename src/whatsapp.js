@@ -25,6 +25,7 @@ export function initializeWhatsApp(onMessageReceived) {
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
+        '--single-process',  // ← AGREGAR ESTE
         '--disable-gpu'
       ],
     },
