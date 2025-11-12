@@ -102,12 +102,29 @@ app.get('/health', (req, res) => {
  */
 app.get('/qr-status', (req, res) => {
   if (isClientReady()) {
+    const client = getClient();
+    
+    // Intentar obtener información del cliente
+    let connectionInfo = null;
+    try {
+      if (client && client.info) {
+        connectionInfo = {
+          phoneNumber: client.info.wid.user,
+          displayName: client.info.pushname || 'Sin nombre',
+          platform: client.info.platform || 'unknown'
+        };
+      }
+    } catch (error) {
+      console.error('Error obteniendo info del cliente:', error);
+    }
+
     return res.json({
       status: 'connected',
       connected: true,
       qr: null,
-      message: 'WhatsApp ya está conectado',
-      timestamp: new Date().toISOString()
+      message: 'WhatsApp conectado correctamente',
+      timestamp: new Date().toISOString(),
+      connectionInfo
     });
   }
 
@@ -130,6 +147,11 @@ app.get('/qr-status', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+
+
+
+
 
 /**
  * GET /
@@ -536,4 +558,50 @@ process.on('SIGTERM', async () => {
     await client.destroy();
   }
   process.exit(0);
+});
+
+
+app.post('/logout', verifyApiKey, async (req, res) => {
+  try {
+    const client = getClient();
+    
+    if (!client) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cliente de WhatsApp no inicializado'
+      });
+    }
+
+    // Verificar si hay una sesión activa
+    if (!isClientReady()) {
+      return res.status(400).json({
+        success: false,
+        error: 'No hay ninguna sesión activa de WhatsApp'
+      });
+    }
+
+    console.log('🔴 Cerrando sesión de WhatsApp...');
+
+    // Cerrar la sesión y destruir el cliente
+    await client.logout();
+    
+    console.log('✅ Sesión de WhatsApp cerrada correctamente');
+
+    res.json({
+      success: true,
+      message: 'Sesión de WhatsApp cerrada correctamente',
+      timestamp: new Date().toISOString()
+    });
+
+    // Nota: El cliente se reiniciará automáticamente y generará un nuevo QR
+    // gracias al sistema de reconexión de whatsapp-web.js
+    
+  } catch (error) {
+    console.error('❌ Error al cerrar sesión:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al cerrar la sesión de WhatsApp',
+      message: error.message
+    });
+  }
 });
