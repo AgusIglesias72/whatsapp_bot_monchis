@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import cors from 'cors';
 import { initializeWhatsApp, getClient, isClientReady, formatPhoneNumber } from './whatsapp.js';
 import { handleIncomingMessage } from './messageHandler.js';
 import { generateContextualMessage, isValidMessageType, getValidMessageTypes, getMessageTypeInfo } from './messageTemplates.js';
@@ -8,6 +9,21 @@ import { generateContextualMessage, isValidMessageType, getValidMessageTypes, ge
 dotenv.config();
 
 const app = express();
+app.use(express.json());
+
+const corsOptions = {
+  origin: [
+    'https://monchis-drivers.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
