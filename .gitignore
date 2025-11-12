@@ -6,7 +6,7 @@ node_modules/
 .env.local
 .env.*.local
 
-# WhatsApp session data
+# WhatsApp session data (MUY IMPORTANTE - nunca subir esto)
 .wwebjs_auth/
 .wwebjs_cache/
 
@@ -36,3 +36,5 @@ Thumbs.db
 # Build
 dist/
 build/
+
+package-lock.json
