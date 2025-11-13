@@ -1,5 +1,5 @@
 // ===== WHITELIST DE NÚMEROS AUTORIZADOS =====
-// Solo estos números recibirán respuestas automáticas
+// Solo estos números recibirán respuestas automáticas (FUTURO)
 // Formato: '5491112345678@c.us' (número completo con @c.us)
 const AUTHORIZED_NUMBERS = [
   '5491100000001@c.us',      // Agustin Iglesias
@@ -57,14 +57,18 @@ export async function handleIncomingMessage(message, webhookUrl) {
       }
     }
 
-    // ===== LÓGICA DE AUTO-RESPUESTA =====
+    // ===== LÓGICA DE AUTO-RESPUESTA (DESHABILITADA - SOLO LOGS) =====
     
     // Ignorar mensajes de grupos
     if (isGroup) {
-      console.log('⏭️  Mensaje de grupo ignorado (no se auto-responde)');
+      console.log('⏭️  Mensaje de grupo recibido (sin auto-respuesta)');
       return;
     }
 
+    console.log(`📨 Mensaje individual de ${message.from} registrado`);
+
+    /* ===== AUTO-RESPUESTAS COMENTADAS - PARA FUTURO =====
+    
     // Verificar si el número está autorizado para auto-respuestas
     if (!isAuthorizedNumber(message.from)) {
       console.log(`⏭️  Número ${message.from} no autorizado para auto-respuestas`);
@@ -106,9 +110,8 @@ export async function handleIncomingMessage(message, webhookUrl) {
       );
       return;
     }
-
-    // NO hay respuesta genérica para otros mensajes
-    // Solo responde a palabras clave específicas
+    
+    ===== FIN AUTO-RESPUESTAS COMENTADAS ===== */
 
   } catch (error) {
     console.error('❌ Error procesando mensaje:', error);
@@ -116,7 +119,7 @@ export async function handleIncomingMessage(message, webhookUrl) {
 }
 
 /**
- * Procesa comandos especiales (opcional)
+ * Procesa comandos especiales (opcional - para debugging)
  * @param {Object} message - Mensaje de WhatsApp
  */
 export async function handleCommand(message) {
