@@ -7,6 +7,8 @@ const AUTHORIZED_NUMBERS = [
   // Agregar más números aquí según sea necesario
 ];
 
+
+
 /**
  * Verifica si un número está autorizado para recibir auto-respuestas
  * @param {string} phoneNumber - Número en formato '5491112345678@c.us'
