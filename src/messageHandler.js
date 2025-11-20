@@ -47,6 +47,7 @@ export async function handleIncomingMessage(message, webhookUrl) {
     console.log('📤 Enviando mensaje al webhook:', messageData);
 
     // Enviar a tu backend en Vercel si está configurado
+    /*
     if (webhookUrl) {
       const response = await fetch(webhookUrl, {
         method: 'POST',
@@ -71,6 +72,7 @@ export async function handleIncomingMessage(message, webhookUrl) {
       console.log('⏭️  Mensaje de grupo recibido (sin auto-respuesta)');
       return;
     }
+    */
 
     console.log(`📨 Mensaje individual de ${message.from} registrado`);
 
