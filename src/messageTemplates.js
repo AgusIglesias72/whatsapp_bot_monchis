@@ -149,7 +149,7 @@ Si seguís interesado en asistir a una nueva capacitación, podemos ayudarte a r
   if (availableEvents && availableEvents.length > 0) {
     message += `\n\n📅 *Proximas capacitaciones disponibles:*\n`;
     
-    availableEvents.forEach((event, index) => {
+    availableEvents.slice(0, 3).forEach((event, index) => {
       message += `\n${index + 1}. ${event.date}`;
     });
 
