@@ -246,7 +246,8 @@ export function isValidMessageType(type) {
   const validTypes = [
     'application_received',
     'form_incomplete',
-    'custom'
+    'custom',
+    'capacitation_no_show'
     // 'onboarding_reminder', // COMENTADO
     // 'welcome', // COMENTADO
     // 'capacitation_reminder' // COMENTADO
