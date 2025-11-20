@@ -592,6 +592,75 @@ app.post('/restart/:botId/fresh', verifyApiKey, async (req, res) => {
   }
 });
 
+app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
+  try {
+    const { phone, message, imageUrl, botId = 'bot-1' } = req.body;
+
+    if (!phone || !message) {
+      return res.status(400).json({
+        error: 'Parámetros faltantes',
+        required: ['phone', 'message'],
+        optional: ['imageUrl', 'botId']
+      });
+    }
+
+    if (!isClientReady(botId)) {
+      return res.status(503).json({
+        error: `Bot ${botId} no está conectado`,
+        availableBots: getAllClients().filter(c => c.ready).map(c => c.clientId)
+      });
+    }
+
+    const client = getClient(botId);
+    const chatId = formatPhoneNumber(phone);
+
+    console.log(`📤 [${botId}] Enviando mensaje${imageUrl ? ' con imagen' : ''} a ${phone}`);
+
+    // Si hay imagen, usar MessageMedia
+    if (imageUrl) {
+      try {
+        // Importar MessageMedia si no está importado
+        const { MessageMedia } = pkg;
+        
+        // Crear media desde URL
+        const media = await MessageMedia.fromUrl(imageUrl);
+        
+        // Enviar con caption
+        await client.sendMessage(chatId, media, { caption: message });
+        
+        console.log(`✅ [${botId}] Mensaje con imagen enviado exitosamente`);
+      } catch (mediaError) {
+        console.error('Error enviando imagen:', mediaError);
+        
+        // Fallback: enviar solo texto
+        console.log('⚠️ Enviando solo texto como fallback...');
+        await client.sendMessage(chatId, message);
+      }
+    } else {
+      // Solo texto
+      await client.sendMessage(chatId, message);
+      console.log(`✅ [${botId}] Mensaje de texto enviado exitosamente`);
+    }
+
+    res.json({
+      success: true,
+      botId: botId,
+      phone: phone,
+      chatId: chatId,
+      hasImage: !!imageUrl,
+      sentAt: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('❌ Error enviando mensaje:', error);
+
+    res.status(500).json({
+      error: 'Error al enviar mensaje',
+      details: error.message
+    });
+  }
+});
+
 /**
  * GET /
  */
