@@ -594,7 +594,7 @@ app.post('/restart/:botId/fresh', verifyApiKey, async (req, res) => {
 
 app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
   try {
-    const { phone, message, imageUrl, botId = 'bot-1' } = req.body;
+    const { phone, message, imageUrl, botId = 'bot-adquisicion-prod' } = req.body;
 
     if (!phone || !message) {
       return res.status(400).json({
@@ -619,22 +619,39 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
     // Si hay imagen, usar MessageMedia
     if (imageUrl) {
       try {
-        // Importar MessageMedia si no está importado
-        const { MessageMedia } = pkg;
+        // ✅ FIX: Importar MessageMedia del paquete ya importado
+        // En lugar de const { MessageMedia } = pkg; 
+        // Usar la importación dinámica o agregar al import inicial
+        const whatsappWeb = await import('whatsapp-web.js');
+        const { MessageMedia } = whatsappWeb.default;
+        
+        console.log(`📷 Descargando imagen desde: ${imageUrl}`);
         
         // Crear media desde URL
         const media = await MessageMedia.fromUrl(imageUrl);
+        
+        console.log(`✅ Imagen descargada, enviando...`);
         
         // Enviar con caption
         await client.sendMessage(chatId, media, { caption: message });
         
         console.log(`✅ [${botId}] Mensaje con imagen enviado exitosamente`);
       } catch (mediaError) {
-        console.error('Error enviando imagen:', mediaError);
+        console.error('❌ Error enviando imagen:', mediaError);
         
         // Fallback: enviar solo texto
-        console.log('⚠️ Enviando solo texto como fallback...');
+        console.log('⚠️  Enviando solo texto como fallback...');
         await client.sendMessage(chatId, message);
+        
+        return res.json({
+          success: true,
+          botId: botId,
+          phone: phone,
+          chatId: chatId,
+          hasImage: false,
+          warning: 'La imagen no pudo enviarse, se envió solo el texto',
+          sentAt: new Date().toISOString()
+        });
       }
     } else {
       // Solo texto
