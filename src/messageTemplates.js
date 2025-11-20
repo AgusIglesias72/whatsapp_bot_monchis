@@ -21,21 +21,11 @@ export function generateContextualMessage(type, name, step, metadata = {}) {
     case 'form_incomplete':
       return generateFormIncompleteMessage(firstName, step, metadata);
 
+    case 'capacitation_no_show':
+      return generateCapacitationNoShowMessage(firstName, metadata);
+
     case 'custom':
       return metadata.customMessage || null;
-
-    /* ===== TEMPLATES COMENTADOS - PARA FUTURO =====
-    
-    case 'onboarding_reminder':
-      return generateOnboardingReminder(firstName, metadata);
-
-    case 'welcome':
-      return generateWelcomeMessage(firstName, metadata);
-
-    case 'capacitation_reminder':
-      return generateCapacitationReminder(firstName, metadata);
-    
-    ===== FIN TEMPLATES COMENTADOS ===== */
 
     default:
       console.error(`Tipo de mensaje no reconocido: ${type}`);
@@ -138,6 +128,49 @@ Vimos que comenzaste tu postulación en Monchis Drivers pero quedó incompleta. 
         `Si necesitás ayuda, respondé este mensaje.`;
   }
 }
+
+/**
+ * Template: No Asistió a Capacitación
+ */
+function generateCapacitationNoShowMessage(firstName, metadata) {
+  const { 
+    missedEventTitle = 'la capacitación',
+    missedEventDate = '',
+    availableEvents = []
+  } = metadata;
+
+  let message = `¡Hola ${firstName}! 👋
+
+Queríamos saber si hubo algún inconveniente o motivo por el cual no pudiste asistir a ${missedEventTitle}${missedEventDate ? ` del ${missedEventDate}` : ''}.
+
+Si seguís interesado en asistir a una nueva capacitación, podemos ayudarte a reprogramar una nueva fecha.
+
+¡Gracias y saludos!
+Equipo Monchis💪🍔`;
+
+  // Agregar capacitaciones disponibles si hay
+  if (availableEvents && availableEvents.length > 0) {
+    message += `\n\n📅 *Las siguientes capacitaciones disponibles:*\n`;
+    
+    availableEvents.forEach((event, index) => {
+      message += `\n${index + 1}. ${event.date}`;
+      if (event.location && event.location !== 'Por confirmar') {
+        message += `\n   📍 ${event.location}`;
+      }
+    });
+
+    message += `\n\n💬 *¿Cuál de estas fechas te vendría bien?* Respondé este mensaje con el número de la capacitación que prefieras.`;
+  } else {
+    message += `\n\nPor favor, respondenos si querés que te ayudemos a encontrar una nueva fecha.`;
+  }
+
+  message += `\n\nQuedamos atentos a tu respuesta.`;
+  message += `\n¡Gracias y saludos!`;
+  message += `\nEquipo Monchis💪🍔`;
+
+  return message;
+}
+
 
 // ===== TEMPLATES COMENTADOS - PARA FUTURO =====
 
