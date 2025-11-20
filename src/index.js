@@ -1,15 +1,25 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import { initializeWhatsApp, getClient, isClientReady, formatPhoneNumber } from './whatsapp.js';
+import { 
+  initializeClient,
+  getClient, 
+  isClientReady,
+  isSessionSaved,
+  getClientQR,
+  getAllClients,
+  formatPhoneNumber,
+  closeClient,
+  closeAllClients
+} from './whatsapp.js';
 import { handleIncomingMessage } from './messageHandler.js';
 import { generateContextualMessage, isValidMessageType, getValidMessageTypes, getMessageTypeInfo } from './messageTemplates.js';
+import mongoose from 'mongoose';
 
 // Cargar variables de entorno
 dotenv.config();
 
 const app = express();
-app.use(express.json());
 
 const corsOptions = {
   origin: [
@@ -30,12 +40,17 @@ const PORT = process.env.PORT || 3000;
 const VERCEL_WEBHOOK_URL = process.env.VERCEL_WEBHOOK_URL;
 const API_KEY = process.env.API_KEY;
 
+// Definir los bots que quieres usar
+const BOTS_CONFIG = [
+  { id: 'bot-adquisicion-prod', name: 'Bot Adquisiciones' },
+  { id: 'bot-reactivacion-prod', name: 'Bot Reactivacion' }
+];
+
 // Middleware para verificar API Key
 function verifyApiKey(req, res, next) {
   const apiKey = req.headers['x-api-key'];
   
   if (!API_KEY) {
-    // Si no hay API_KEY configurada, permitir (solo para desarrollo)
     return next();
   }
   
@@ -46,190 +61,184 @@ function verifyApiKey(req, res, next) {
   next();
 }
 
-// ===== VARIABLES GLOBALES PARA QR =====
-let currentQRCode = null;
-let qrTimestamp = null;
+// ===== INICIALIZACIÓN DE BOTS =====
+console.log('🚀 Iniciando servidor multi-bot de WhatsApp...\n');
 
-// ===== INICIALIZACIÓN DE WHATSAPP =====
-console.log('🚀 Iniciando servidor del bot de WhatsApp...\n');
+const initBots = async () => {
+  try {
+    for (const botConfig of BOTS_CONFIG) {
+      console.log(`🤖 Inicializando ${botConfig.name} (${botConfig.id})...`);
+      
+      await initializeClient(botConfig.id, (message, clientId) => {
+        handleIncomingMessage(message, VERCEL_WEBHOOK_URL);
+      });
+      
+      // Esperar 2 segundos entre inicializaciones para no sobrecargar
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    
+    console.log('\n✅ Todos los bots inicializados correctamente\n');
+  } catch (error) {
+    console.error('❌ Error fatal inicializando bots:', error);
+    process.exit(1);
+  }
+};
 
-// Inicializar cliente de WhatsApp con handler de mensajes
-const whatsappClient = initializeWhatsApp((message) => {
-  handleIncomingMessage(message, VERCEL_WEBHOOK_URL);
-});
-
-// Capturar el QR cuando se genere (para acceso desde frontend)
-const clientInstance = getClient();
-if (clientInstance) {
-  clientInstance.on('qr', (qr) => {
-    currentQRCode = qr;
-    qrTimestamp = new Date().toISOString();
-    console.log('📱 QR Code generado y disponible en /qr-status');
-  });
-
-  clientInstance.on('ready', () => {
-    currentQRCode = null;
-    qrTimestamp = null;
-    console.log('✅ QR limpiado - WhatsApp conectado');
-  });
-
-  clientInstance.on('authenticated', () => {
-    currentQRCode = null;
-    qrTimestamp = null;
-  });
-}
+initBots();
 
 // ===== RUTAS API =====
 
 /**
  * GET /health
- * Health check del servidor y estado de WhatsApp
  */
 app.get('/health', (req, res) => {
+  const clients = getAllClients();
+  
   res.json({
     status: 'ok',
-    whatsappReady: isClientReady(),
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    bots: clients
   });
 });
 
 /**
- * GET /qr-status
- * Obtiene el estado de conexión de WhatsApp y QR code si está disponible
- * Útil para mostrar el QR en el frontend
+ * GET /bots
+ * Lista todos los bots y su estado
  */
-app.get('/qr-status', (req, res) => {
-  if (isClientReady()) {
-    const client = getClient();
-    
-    // Intentar obtener información del cliente
+app.get('/bots', verifyApiKey, (req, res) => {
+  const clients = getAllClients();
+  
+  const botsWithInfo = clients.map(client => {
+    const whatsappClient = getClient(client.clientId);
     let connectionInfo = null;
-    try {
-      if (client && client.info) {
+    
+    if (whatsappClient && client.ready) {
+      try {
         connectionInfo = {
-          phoneNumber: client.info.wid.user,
-          displayName: client.info.pushname || 'Sin nombre',
-          platform: client.info.platform || 'unknown'
+          phoneNumber: whatsappClient.info?.wid?.user || 'Desconocido',
+          displayName: whatsappClient.info?.pushname || 'Sin nombre',
+          platform: whatsappClient.info?.platform || 'unknown'
         };
+      } catch (error) {
+        // Ignorar errores al obtener info
       }
-    } catch (error) {
-      console.error('Error obteniendo info del cliente:', error);
     }
-
-    return res.json({
-      status: 'connected',
-      connected: true,
-      qr: null,
-      message: 'WhatsApp conectado correctamente',
-      timestamp: new Date().toISOString(),
-      connectionInfo
-    });
-  }
-
-  if (currentQRCode) {
-    return res.json({
-      status: 'qr_available',
-      connected: false,
-      qr: currentQRCode,
-      generatedAt: qrTimestamp,
-      message: 'Escanea este QR para conectar WhatsApp',
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  return res.json({
-    status: 'initializing',
-    connected: false,
-    qr: null,
-    message: 'Inicializando WhatsApp, espera unos segundos...',
+    
+    return {
+      ...client,
+      connectionInfo,
+      qrAvailable: client.hasQR
+    };
+  });
+  
+  res.json({
+    total: botsWithInfo.length,
+    bots: botsWithInfo,
     timestamp: new Date().toISOString()
   });
 });
 
-
-
-
-
-
 /**
- * GET /
- * Página de inicio simple
+ * GET /qr/:botId
+ * Obtiene el QR de un bot específico
  */
-app.get('/', (req, res) => {
-  res.json({
-    service: 'WhatsApp Bot API - Monchis Drivers',
-    version: '1.0.0',
-    status: isClientReady() ? 'connected' : 'disconnected',
-    endpoints: {
-      health: 'GET /health',
-      qrStatus: 'GET /qr-status',
-      sendMessage: 'POST /send-message',
-      sendContextualMessage: 'POST /send-contextual-message',
-      messageTypes: 'GET /message-types',
-      sendBulk: 'POST /send-bulk',
-      sendWithMedia: 'POST /send-with-media'
+app.get('/qr/:botId', verifyApiKey, (req, res) => {
+  const { botId } = req.params;
+  
+  if (isClientReady(botId)) {
+    const client = getClient(botId);
+    let connectionInfo = null;
+    
+    try {
+      if (client && client.info) {
+        connectionInfo = {
+          phoneNumber: client.info.wid.user,
+          displayName: client.info.pushname || 'Sin nombre'
+        };
+      }
+    } catch (error) {
+      // Ignorar
     }
+    
+    return res.json({
+      botId,
+      status: 'connected',
+      connected: true,
+      sessionSaved: isSessionSaved(botId),
+      qr: null,
+      message: 'Bot conectado',
+      connectionInfo
+    });
+  }
+  
+  const qrData = getClientQR(botId);
+  
+  if (qrData) {
+    return res.json({
+      botId,
+      status: 'qr_available',
+      connected: false,
+      sessionSaved: false,
+      qr: qrData.qr,
+      generatedAt: qrData.timestamp,
+      message: 'Escanea el QR para conectar'
+    });
+  }
+  
+  return res.json({
+    botId,
+    status: 'initializing',
+    connected: false,
+    sessionSaved: false,
+    qr: null,
+    message: 'Bot inicializando...'
   });
 });
 
 /**
  * POST /send-message
- * Envía un mensaje individual de WhatsApp
- * Body: { phone, message, type? }
+ * Envía un mensaje usando un bot específico
  */
 app.post('/send-message', verifyApiKey, async (req, res) => {
   try {
-    const { phone, message, type } = req.body;
+    const { phone, message, botId = 'bot-1' } = req.body;
 
-    // Validaciones
     if (!phone || !message) {
       return res.status(400).json({
         error: 'Parámetros faltantes',
         required: ['phone', 'message'],
-        received: { phone: !!phone, message: !!message }
+        optional: ['botId (default: bot-1)']
       });
     }
 
-    if (!isClientReady()) {
+    if (!isClientReady(botId)) {
       return res.status(503).json({
-        error: 'WhatsApp no está conectado todavía',
-        message: 'Espera unos segundos e intenta nuevamente'
+        error: `Bot ${botId} no está conectado`,
+        availableBots: getAllClients().filter(c => c.ready).map(c => c.clientId)
       });
     }
 
-    // Obtener cliente y formatear número
-    const client = getClient();
+    const client = getClient(botId);
     const chatId = formatPhoneNumber(phone);
 
-    console.log(`📤 Enviando mensaje a ${phone} (${chatId})`);
-    console.log(`📝 Mensaje: ${message}`);
-    if (type) console.log(`🏷️  Tipo: ${type}`);
+    console.log(`📤 [${botId}] Enviando mensaje a ${phone}`);
 
-    // Enviar mensaje
     await client.sendMessage(chatId, message);
 
-    console.log(`✅ Mensaje enviado exitosamente a ${phone}`);
+    console.log(`✅ [${botId}] Mensaje enviado exitosamente`);
 
     res.json({
       success: true,
+      botId: botId,
       phone: phone,
       chatId: chatId,
-      type: type || 'general',
       sentAt: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('❌ Error enviando mensaje:', error);
-
-    // Errores específicos de WhatsApp
-    if (error.message.includes('phone number is not registered')) {
-      return res.status(400).json({
-        error: 'Número no registrado en WhatsApp',
-        phone: req.body.phone
-      });
-    }
 
     res.status(500).json({
       error: 'Error al enviar mensaje',
@@ -240,33 +249,19 @@ app.post('/send-message', verifyApiKey, async (req, res) => {
 
 /**
  * POST /send-contextual-message
- * Envía mensajes contextuales basados en templates predefinidos
- * Body: { phone, name, type, step?, metadata? }
  */
 app.post('/send-contextual-message', verifyApiKey, async (req, res) => {
   try {
-    const { 
-      phone,           // Número del destinatario
-      name,            // Nombre completo del postulante
-      type,            // Tipo de mensaje (ver messageTemplates.js)
-      step,            // Step del formulario (opcional, requerido para form_incomplete)
-      metadata         // Datos adicionales (opcional)
-    } = req.body;
+    const { phone, name, type, step, metadata, botId = 'bot-1' } = req.body;
 
-    // Validaciones básicas
     if (!phone || !name || !type) {
       return res.status(400).json({
         error: 'Parámetros faltantes',
         required: ['phone', 'name', 'type'],
-        received: { 
-          phone: !!phone, 
-          name: !!name, 
-          type: !!type 
-        }
+        optional: ['step', 'metadata', 'botId (default: bot-1)']
       });
     }
 
-    // Validar tipo de mensaje
     if (!isValidMessageType(type)) {
       return res.status(400).json({
         error: `Tipo de mensaje no válido: ${type}`,
@@ -274,151 +269,97 @@ app.post('/send-contextual-message', verifyApiKey, async (req, res) => {
       });
     }
 
-    // Validar step para form_incomplete
-    if (type === 'form_incomplete' && !step) {
-      return res.status(400).json({
-        error: 'El parámetro "step" es requerido para mensajes de tipo form_incomplete',
-        validSteps: ['personal_info', 'documents', 'vehicle_info', 'bank_info', 'availability', 'references']
-      });
-    }
-
-    // Verificar conexión de WhatsApp
-    if (!isClientReady()) {
+    if (!isClientReady(botId)) {
       return res.status(503).json({
-        error: 'WhatsApp no está conectado todavía',
-        message: 'Espera unos segundos e intenta nuevamente'
+        error: `Bot ${botId} no está conectado`,
+        availableBots: getAllClients().filter(c => c.ready).map(c => c.clientId)
       });
     }
 
-    // Generar mensaje contextual
     const message = generateContextualMessage(type, name, step, metadata || {});
-    
-    if (!message) {
-      return res.status(500).json({
-        error: 'No se pudo generar el mensaje',
-        type: type,
-        step: step
-      });
-    }
-
-    // Enviar mensaje
-    const client = getClient();
+    const client = getClient(botId);
     const chatId = formatPhoneNumber(phone);
     
-    console.log(`📤 Enviando mensaje contextual:`);
-    console.log(`   👤 Destinatario: ${name} (${phone})`);
-    console.log(`   📋 Tipo: ${type}`);
-    if (step) console.log(`   📍 Step: ${step}`);
+    console.log(`📤 [${botId}] Enviando mensaje contextual tipo: ${type}`);
     
-    const startTime = Date.now();
     await client.sendMessage(chatId, message);
-    const endTime = Date.now();
 
-    console.log(`✅ Mensaje enviado exitosamente en ${endTime - startTime}ms`);
+    console.log(`✅ [${botId}] Mensaje contextual enviado`);
 
-    // Respuesta con metadata completa para guardar en PostgreSQL
     res.json({
       success: true,
-      data: {
-        phone: phone,
-        chatId: chatId,
-        name: name,
-        type: type,
-        step: step || null,
-        message: message,
-        messageLength: message.length,
-        sentAt: new Date().toISOString(),
-        responseTimeMs: endTime - startTime,
-        metadata: metadata || null
-      }
+      botId: botId,
+      phone: phone,
+      name: name,
+      type: type,
+      sentAt: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('❌ Error enviando mensaje contextual:', error);
     
-    // Errores específicos de WhatsApp
-    if (error.message.includes('phone number is not registered')) {
-      return res.status(400).json({
-        error: 'Número no registrado en WhatsApp',
-        phone: req.body.phone,
-        type: req.body.type
-      });
-    }
-
     res.status(500).json({
       error: 'Error al enviar mensaje',
-      details: error.message,
-      phone: req.body.phone,
-      type: req.body.type
+      details: error.message
     });
   }
 });
 
 /**
- * GET /message-types
- * Obtiene información sobre los tipos de mensajes disponibles
- */
-app.get('/message-types', verifyApiKey, (req, res) => {
-  const types = getValidMessageTypes();
-  const typesInfo = types.map(type => ({
-    type: type,
-    info: getMessageTypeInfo(type)
-  }));
-
-  res.json({
-    availableTypes: types,
-    details: typesInfo
-  });
-});
-
-/**
  * POST /send-bulk
- * Envía múltiples mensajes (con delay para evitar ban)
- * Body: { messages: [{ phone, message, type? }] }
+ * Envío masivo con distribución automática entre bots
  */
 app.post('/send-bulk', verifyApiKey, async (req, res) => {
   try {
-    const { messages } = req.body;
+    const { messages, distributeAcrossBots = true } = req.body;
 
-    // Validaciones
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({
-        error: 'Se requiere un array de messages',
-        example: {
-          messages: [
-            { phone: '5491112345678', message: 'Hola!' },
-            { phone: '5491198765432', message: 'Recordatorio...' }
-          ]
-        }
+        error: 'Se requiere un array de messages'
       });
     }
 
-    if (messages.length === 0) {
-      return res.status(400).json({
-        error: 'El array de messages está vacío'
-      });
-    }
-
-    if (!isClientReady()) {
+    const readyBots = getAllClients().filter(c => c.ready);
+    
+    if (readyBots.length === 0) {
       return res.status(503).json({
-        error: 'WhatsApp no está conectado todavía'
+        error: 'No hay bots conectados'
       });
     }
 
-    const client = getClient();
+    console.log(`📤 Enviando ${messages.length} mensajes...`);
+    
     const results = [];
-
-    console.log(`📤 Enviando ${messages.length} mensajes en lote...`);
+    let botIndex = 0;
 
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
-
+      
       try {
         if (!msg.phone || !msg.message) {
           results.push({
             phone: msg.phone || 'unknown',
             success: false,
-            error: 'Faltan parámetros phone o message'
+            error: 'Faltan parámetros'
+          });
+          continue;
+        }
+
+        // Seleccionar bot (distribuir o usar el especificado)
+        let botId;
+        if (distributeAcrossBots) {
+          botId = readyBots[botIndex % readyBots.length].clientId;
+          botIndex++;
+        } else {
+          botId = msg.botId || 'bot-1';
+        }
+
+        const client = getClient(botId);
+        if (!client) {
+          results.push({
+            phone: msg.phone,
+            success: false,
+            error: `Bot ${botId} no disponible`
           });
           continue;
         }
@@ -428,16 +369,16 @@ app.post('/send-bulk', verifyApiKey, async (req, res) => {
 
         results.push({
           phone: msg.phone,
+          botId: botId,
           success: true,
           sentAt: new Date().toISOString()
         });
 
-        console.log(`✅ [${i + 1}/${messages.length}] Enviado a ${msg.phone}`);
+        console.log(`✅ [${i + 1}/${messages.length}] [${botId}] → ${msg.phone}`);
 
-        // Delay entre mensajes para evitar ban (2-3 segundos)
+        // Delay entre mensajes
         if (i < messages.length - 1) {
-          const delay = 2000 + Math.random() * 1000; // 2-3 segundos
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
       } catch (error) {
@@ -446,8 +387,6 @@ app.post('/send-bulk', verifyApiKey, async (req, res) => {
           success: false,
           error: error.message
         });
-
-        console.error(`❌ [${i + 1}/${messages.length}] Error enviando a ${msg.phone}:`, error.message);
       }
     }
 
@@ -475,51 +414,207 @@ app.post('/send-bulk', verifyApiKey, async (req, res) => {
 });
 
 /**
- * POST /send-with-media
- * Envía un mensaje con imagen o archivo adjunto
- * Body: { phone, message, mediaUrl }
+ * GET /message-types
  */
-app.post('/send-with-media', verifyApiKey, async (req, res) => {
+app.get('/message-types', verifyApiKey, (req, res) => {
+  const types = getValidMessageTypes();
+  const typesInfo = types.map(type => ({
+    type: type,
+    info: getMessageTypeInfo(type)
+  }));
+
+  res.json({
+    availableTypes: types,
+    details: typesInfo
+  });
+});
+
+/**
+ * POST /logout/:botId
+ * Cierra sesión completa de un bot (logout + elimina de MongoDB + destruye cliente)
+ */
+app.post('/logout/:botId', verifyApiKey, async (req, res) => {
   try {
-    const { phone, message, mediaUrl } = req.body;
+    const { botId } = req.params;
+    
+    const success = await closeClient(botId);
+    
+    if (success) {
+      res.json({
+        success: true,
+        message: `Bot ${botId} cerrado completamente`,
+        timestamp: new Date().toISOString(),
+        note: 'La sesión fue eliminada. Escanea nuevo QR al reiniciar.'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: `Bot ${botId} no encontrado`
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error cerrando bot:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
-    if (!phone || !mediaUrl) {
+/**
+ * POST /restart/:botId
+ * Reinicia un bot específico (cierra y vuelve a inicializar)
+ * Si tiene sesión en MongoDB → reconecta sin QR
+ * Si NO tiene sesión → genera nuevo QR
+ */
+app.post('/restart/:botId', verifyApiKey, async (req, res) => {
+  try {
+    const { botId } = req.params;
+    
+    // Verificar que el botId sea válido
+    const validBots = BOTS_CONFIG.map(b => b.id);
+    if (!validBots.includes(botId)) {
       return res.status(400).json({
-        error: 'Parámetros faltantes: phone y mediaUrl requeridos'
+        success: false,
+        error: `Bot ${botId} no está en la configuración`,
+        validBots: validBots
       });
     }
-
-    if (!isClientReady()) {
-      return res.status(503).json({
-        error: 'WhatsApp no está conectado'
-      });
+    
+    console.log(`🔄 Reiniciando ${botId}...`);
+    
+    // 1. Cerrar el bot (si existe)
+    const existingClient = getClient(botId);
+    if (existingClient) {
+      console.log(`🔴 Cerrando ${botId}...`);
+      await closeClient(botId);
+    } else {
+      console.log(`⚠️  ${botId} no estaba activo`);
     }
-
-    const client = getClient();
-    const chatId = formatPhoneNumber(phone);
-
-    // Importar MessageMedia dinámicamente
-    const { MessageMedia } = await import('whatsapp-web.js');
-    const media = await MessageMedia.fromUrl(mediaUrl);
-
-    await client.sendMessage(chatId, media, { caption: message || '' });
-
-    console.log(`✅ Mensaje con media enviado a ${phone}`);
-
+    
+    // 2. Esperar un poco para asegurar limpieza completa
+    console.log(`⏳ Esperando 2 segundos...`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 3. Reinicializar el bot
+    console.log(`🚀 Inicializando ${botId}...`);
+    await initializeClient(botId, (message, clientId) => {
+      handleIncomingMessage(message, VERCEL_WEBHOOK_URL);
+    });
+    
+    // 4. Responder inmediatamente
     res.json({
       success: true,
-      phone: phone,
-      mediaUrl: mediaUrl,
-      sentAt: new Date().toISOString()
+      message: `Bot ${botId} reiniciado correctamente`,
+      botId: botId,
+      timestamp: new Date().toISOString(),
+      notes: [
+        'El bot se está inicializando en segundo plano',
+        'Si tiene sesión guardada en MongoDB → se reconectará automáticamente',
+        'Si NO tiene sesión → generará un QR (verificar en /qr/' + botId + ')',
+        'Esto puede tardar 10-30 segundos'
+      ]
     });
-
+    
   } catch (error) {
-    console.error('❌ Error enviando mensaje con media:', error);
+    console.error('❌ Error reiniciando bot:', error);
     res.status(500).json({
-      error: 'Error al enviar mensaje con media',
+      success: false,
+      error: 'Error al reiniciar bot',
       details: error.message
     });
   }
+});
+
+/**
+ * POST /restart/:botId/fresh
+ * Reinicia bot Y elimina la sesión de MongoDB (fuerza escaneo de QR)
+ */
+app.post('/restart/:botId/fresh', verifyApiKey, async (req, res) => {
+  try {
+    const { botId } = req.params;
+    
+    // Verificar que el botId sea válido
+    const validBots = BOTS_CONFIG.map(b => b.id);
+    if (!validBots.includes(botId)) {
+      return res.status(400).json({
+        success: false,
+        error: `Bot ${botId} no está en la configuración`,
+        validBots: validBots
+      });
+    }
+    
+    console.log(`🔄 Reinicio COMPLETO de ${botId} (sin sesión)...`);
+    
+    // 1. Cerrar el bot
+    await closeClient(botId);
+    
+    // 2. Eliminar sesión de MongoDB manualmente
+    const db = mongoose.connection.db;
+    
+    const filesCollection = `whatsapp-RemoteAuth-${botId}.files`;
+    const chunksCollection = `whatsapp-RemoteAuth-${botId}.chunks`;
+    
+    await db.collection(filesCollection).drop().catch(() => {
+      console.log(`⚠️  Colección ${filesCollection} no existe o ya fue eliminada`);
+    });
+    
+    await db.collection(chunksCollection).drop().catch(() => {
+      console.log(`⚠️  Colección ${chunksCollection} no existe o ya fue eliminada`);
+    });
+    
+    console.log(`🗑️  Sesión de MongoDB eliminada`);
+    
+    // 3. Esperar
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // 4. Reinicializar
+    await initializeClient(botId, (message, clientId) => {
+      handleIncomingMessage(message, VERCEL_WEBHOOK_URL);
+    });
+    
+    res.json({
+      success: true,
+      message: `Bot ${botId} reiniciado sin sesión`,
+      botId: botId,
+      note: 'Se generará un NUEVO QR - la sesión anterior fue eliminada',
+      qrUrl: `/qr/${botId}`,
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /
+ */
+app.get('/', (req, res) => {
+  const clients = getAllClients();
+  
+  res.json({
+    service: 'WhatsApp Multi-Bot API - Monchis Drivers',
+    version: '3.0.0',
+    bots: clients,
+    endpoints: {
+      health: 'GET /health',
+      bots: 'GET /bots',
+      qr: 'GET /qr/:botId',
+      sendMessage: 'POST /send-message',
+      sendContextualMessage: 'POST /send-contextual-message',
+      sendBulk: 'POST /send-bulk',
+      messageTypes: 'GET /message-types',
+      logout: 'POST /logout/:botId',
+      restart: 'POST /restart/:botId',
+      restartFresh: 'POST /restart/:botId/fresh'
+    }
+  });
 });
 
 // ===== MANEJO DE ERRORES =====
@@ -534,8 +629,9 @@ app.use((err, req, res, next) => {
 // ===== INICIAR SERVIDOR =====
 app.listen(PORT, () => {
   console.log(`\n${'='.repeat(50)}`);
-  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+  console.log(`🚀 Servidor Multi-Bot corriendo en puerto ${PORT}`);
   console.log(`🌐 URL: http://localhost:${PORT}`);
+  console.log(`🤖 Bots configurados: ${BOTS_CONFIG.length}`);
   console.log(`📡 Webhook: ${VERCEL_WEBHOOK_URL || 'No configurado'}`);
   console.log(`🔐 API Key: ${API_KEY ? 'Configurada ✅' : 'No configurada ⚠️'}`);
   console.log(`${'='.repeat(50)}\n`);
@@ -543,65 +639,13 @@ app.listen(PORT, () => {
 
 // Manejo de señales de terminación
 process.on('SIGINT', async () => {
-  console.log('\n⚠️  Señal SIGINT recibida, cerrando servidor...');
-  const client = getClient();
-  if (client) {
-    await client.destroy();
-  }
+  console.log('\n⚠️  Señal SIGINT recibida, cerrando todos los bots...');
+  await closeAllClients();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  console.log('\n⚠️  Señal SIGTERM recibida, cerrando servidor...');
-  const client = getClient();
-  if (client) {
-    await client.destroy();
-  }
+  console.log('\n⚠️  Señal SIGTERM recibida, cerrando todos los bots...');
+  await closeAllClients();
   process.exit(0);
-});
-
-
-app.post('/logout', verifyApiKey, async (req, res) => {
-  try {
-    const client = getClient();
-    
-    if (!client) {
-      return res.status(400).json({
-        success: false,
-        error: 'Cliente de WhatsApp no inicializado'
-      });
-    }
-
-    // Verificar si hay una sesión activa
-    if (!isClientReady()) {
-      return res.status(400).json({
-        success: false,
-        error: 'No hay ninguna sesión activa de WhatsApp'
-      });
-    }
-
-    console.log('🔴 Cerrando sesión de WhatsApp...');
-
-    // Cerrar la sesión y destruir el cliente
-    await client.logout();
-    
-    console.log('✅ Sesión de WhatsApp cerrada correctamente');
-
-    res.json({
-      success: true,
-      message: 'Sesión de WhatsApp cerrada correctamente',
-      timestamp: new Date().toISOString()
-    });
-
-    // Nota: El cliente se reiniciará automáticamente y generará un nuevo QR
-    // gracias al sistema de reconexión de whatsapp-web.js
-    
-  } catch (error) {
-    console.error('❌ Error al cerrar sesión:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error al cerrar la sesión de WhatsApp',
-      message: error.message
-    });
-  }
 });

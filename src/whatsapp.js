@@ -1,148 +1,302 @@
-import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth } = pkg;
-import qrcode from 'qrcode-terminal';
+/**
+ * Multi-Client WhatsApp Manager
+ * Permite manejar múltiples bots de WhatsApp simultáneamente
+ */
 
-let client = null;
-let isReady = false;
+import pkg from 'whatsapp-web.js';
+const { Client, RemoteAuth } = pkg;
+import qrcode from 'qrcode-terminal';
+import { MongoStore } from 'wwebjs-mongo';
+import mongoose from 'mongoose';
+import os from 'os';
+
+// Map para guardar múltiples clientes
+const clients = new Map();
+const clientsReady = new Map();
+const clientsSessionSaved = new Map();
+const clientsQR = new Map();
+
+let mongooseConnected = false;
 
 /**
- * Inicializa el cliente de WhatsApp con LocalAuth
- * @param {Function} onMessageReceived - Callback que se ejecuta cuando llega un mensaje
- * @returns {Client} - Instancia del cliente de WhatsApp
+ * Conecta a MongoDB (solo una vez)
  */
-export function initializeWhatsApp(onMessageReceived) {
-  // Configuración de Puppeteer para Railway
-  const puppeteerConfig = {
-    headless: true,
-    executablePath: '/usr/bin/chromium', // ← AGREGAR ESTA LÍNEA
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-gpu',
-      '--disable-features=AudioServiceOutOfProcess'
-    ]
-  };
+async function connectMongoDB() {
+  if (mongooseConnected) return;
+  
+  try {
+    console.log('🔌 Conectando a MongoDB con Mongoose...');
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('✅ Conectado a MongoDB exitosamente');
+    mongooseConnected = true;
+  } catch (error) {
+    console.error('❌ Error conectando a MongoDB:', error);
+    throw new Error('No se pudo conectar a MongoDB');
+  }
+}
 
-  client = new Client({
-    authStrategy: new LocalAuth({
-      clientId: 'whatsapp-bot-main',
-      dataPath: './.wwebjs_auth'
+/**
+ * Obtiene configuración de Puppeteer según el sistema operativo
+ */
+function getPuppeteerConfig() {
+  const isWindows = os.platform() === 'win32';
+  const isLinux = os.platform() === 'linux';
+  
+  if (isWindows) {
+    console.log('🪟 Sistema Windows detectado - usando Chromium de Puppeteer');
+    return {
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu'
+      ]
+    };
+  } else if (isLinux) {
+    console.log('🐧 Sistema Linux detectado - usando Chromium del sistema');
+    return {
+      headless: true,
+      executablePath: '/usr/bin/chromium',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu',
+        '--disable-features=AudioServiceOutOfProcess'
+      ]
+    };
+  } else {
+    return {
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    };
+  }
+}
+
+/**
+ * Inicializa un cliente de WhatsApp
+ * @param {string} clientId - ID único del cliente (ej: 'bot-1', 'bot-2')
+ * @param {Function} onMessageReceived - Callback para mensajes recibidos
+ */
+export async function initializeClient(clientId, onMessageReceived) {
+  // Verificar si el cliente ya existe
+  if (clients.has(clientId)) {
+    console.log(`⚠️  Cliente ${clientId} ya está inicializado`);
+    return clients.get(clientId);
+  }
+
+  console.log(`\n${'='.repeat(50)}`);
+  console.log(`🤖 Inicializando bot: ${clientId}`);
+  console.log(`${'='.repeat(50)}\n`);
+
+  // Conectar a MongoDB
+  await connectMongoDB();
+
+  // Crear store
+  const store = new MongoStore({ mongoose: mongoose });
+  const puppeteerConfig = getPuppeteerConfig();
+
+  // Crear cliente
+  const client = new Client({
+    authStrategy: new RemoteAuth({
+      clientId: clientId,
+      store: store,
+      backupSyncIntervalMs: 300000
     }),
-    puppeteer: puppeteerConfig, // ← Usar la config de arriba
+    puppeteer: puppeteerConfig,
     webVersionCache: {
       type: 'remote',
       remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
     }
   });
 
-  // Evento: QR Code para autenticación inicial
+  // Eventos del cliente
   client.on('qr', (qr) => {
-    console.log('\n🔐 ===== ESCANEA ESTE QR CON WHATSAPP =====\n');
+    console.log(`\n🔐 ===== QR para ${clientId} =====\n`);
     qrcode.generate(qr, { small: true });
-    console.log('\n📱 Abre WhatsApp > Dispositivos vinculados > Vincular dispositivo');
-    console.log('⏳ Esperando escaneo...\n');
+    console.log(`\n📱 Escanea con WhatsApp para conectar ${clientId}\n`);
+    
+    // Guardar QR para endpoint
+    clientsQR.set(clientId, {
+      qr: qr,
+      timestamp: new Date().toISOString()
+    });
   });
 
-  // Evento: Cliente listo y autenticado
   client.on('ready', () => {
-    console.log('✅ WhatsApp Bot conectado y listo!');
+    console.log(`✅ ${clientId} conectado y listo!`);
     console.log(`📞 Conectado como: ${client.info.pushname}`);
     console.log(`📱 Número: ${client.info.wid.user}`);
-    isReady = true;
+    
+    clientsReady.set(clientId, true);
+    clientsQR.delete(clientId);
+    
+    if (!clientsSessionSaved.get(clientId)) {
+      console.log(`⏳ Esperando que la sesión de ${clientId} se guarde...`);
+    }
   });
 
-  // Evento: Autenticación exitosa
   client.on('authenticated', () => {
-    console.log('🔓 Autenticación exitosa');
+    console.log(`🔓 ${clientId} autenticado exitosamente`);
   });
 
-  // Evento: Error de autenticación
   client.on('auth_failure', (msg) => {
-    console.error('❌ Error de autenticación:', msg);
+    console.error(`❌ Error de autenticación en ${clientId}:`, msg);
   });
 
-  // Evento: Mensaje recibido
+  client.on('remote_session_saved', () => {
+    clientsSessionSaved.set(clientId, true);
+    console.log(`💾 ✅ Sesión de ${clientId} guardada en MongoDB`);
+    console.log(`✨ ${clientId} persistirá entre reinicios`);
+  });
+
   client.on('message', async (message) => {
-    // Ignorar mensajes de grupos si lo deseas
     const isGroup = message.from.includes('@g.us');
     
-    console.log('📨 Mensaje recibido:', {
+    console.log(`📨 Mensaje recibido en ${clientId}:`, {
       from: message.from,
       fromName: message._data.notifyName || 'Desconocido',
       body: message.body,
-      isGroup: isGroup,
-      timestamp: new Date()
+      isGroup: isGroup
     });
 
-    // Ejecutar callback personalizado
     if (onMessageReceived) {
       try {
-        await onMessageReceived(message);
+        await onMessageReceived(message, clientId);
       } catch (error) {
-        console.error('Error en callback de mensaje:', error);
+        console.error(`Error en callback de ${clientId}:`, error);
       }
     }
   });
 
-  // Evento: Cliente desconectado
   client.on('disconnected', (reason) => {
-    console.log('❌ Cliente desconectado:', reason);
-    isReady = false;
-    console.log('🔄 Intentando reconectar...');
+    console.log(`❌ ${clientId} desconectado:`, reason);
+    clientsReady.set(clientId, false);
+    clientsSessionSaved.set(clientId, false);
   });
 
-  // Evento: Loading screen
   client.on('loading_screen', (percent, message) => {
-    console.log('⏳ Cargando...', percent, message);
+    console.log(`⏳ ${clientId} cargando... ${percent}% - ${message}`);
   });
 
-  // Inicializar cliente
-  console.log('🚀 Inicializando cliente de WhatsApp con LocalAuth...');
-  console.log('💾 Sesión se guardará en: ./.wwebjs_auth');
+  // Guardar cliente
+  clients.set(clientId, client);
+  clientsReady.set(clientId, false);
+  clientsSessionSaved.set(clientId, false);
+
+  // Inicializar
+  console.log(`🚀 Inicializando ${clientId} con RemoteAuth...`);
   client.initialize();
 
   return client;
 }
 
 /**
- * Obtiene la instancia del cliente
- * @returns {Client|null}
+ * Obtiene un cliente específico
  */
-export function getClient() {
-  return client;
+export function getClient(clientId) {
+  return clients.get(clientId);
 }
 
 /**
- * Verifica si el cliente está listo
- * @returns {boolean}
+ * Verifica si un cliente está listo
  */
-export function isClientReady() {
-  return isReady;
+export function isClientReady(clientId) {
+  return clientsReady.get(clientId) || false;
 }
 
 /**
- * Formatea un número de teléfono al formato de WhatsApp
- * @param {string} phone - Número de teléfono
- * @returns {string} - Número formateado (ej: 5491112345678@c.us)
+ * Verifica si la sesión está guardada
+ */
+export function isSessionSaved(clientId) {
+  return clientsSessionSaved.get(clientId) || false;
+}
+
+/**
+ * Obtiene el QR de un cliente
+ */
+export function getClientQR(clientId) {
+  return clientsQR.get(clientId);
+}
+
+/**
+ * Lista todos los clientes
+ */
+export function getAllClients() {
+  return Array.from(clients.keys()).map(clientId => ({
+    clientId,
+    ready: isClientReady(clientId),
+    sessionSaved: isSessionSaved(clientId),
+    hasQR: clientsQR.has(clientId)
+  }));
+}
+
+/**
+ * Formatea número de teléfono
  */
 export function formatPhoneNumber(phone) {
-  // Remover caracteres no numéricos
   let cleanPhone = phone.replace(/\D/g, '');
   
-  // Si no tiene código de país, asumir Argentina (54)
   if (!cleanPhone.startsWith('54') && cleanPhone.length === 10) {
     cleanPhone = '54' + cleanPhone;
   }
   
-  // Agregar sufijo de WhatsApp si no lo tiene
   if (!cleanPhone.includes('@c.us')) {
     cleanPhone = cleanPhone + '@c.us';
   }
   
   return cleanPhone;
+}
+
+/**
+ * Cierra un cliente específico
+ */
+export async function closeClient(clientId) {
+  const client = clients.get(clientId);
+  
+  if (client) {
+    try {
+      if (clientsReady.get(clientId)) {
+        await client.logout();
+      }
+      await client.destroy();
+      
+      clients.delete(clientId);
+      clientsReady.delete(clientId);
+      clientsSessionSaved.delete(clientId);
+      clientsQR.delete(clientId);
+      
+      console.log(`👋 Cliente ${clientId} cerrado`);
+      return true;
+    } catch (error) {
+      console.error(`Error cerrando ${clientId}:`, error);
+      throw error;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Cierra todos los clientes
+ */
+export async function closeAllClients() {
+  const clientIds = Array.from(clients.keys());
+  
+  for (const clientId of clientIds) {
+    await closeClient(clientId);
+  }
+  
+  if (mongooseConnected) {
+    await mongoose.connection.close();
+    console.log('👋 Desconectado de MongoDB');
+  }
 }
