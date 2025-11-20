@@ -143,7 +143,7 @@ function generateCapacitationNoShowMessage(firstName, metadata) {
 
 Queríamos saber si hubo algún inconveniente o motivo por el cual no pudiste asistir a ${missedEventTitle}${missedEventDate ? ` del ${missedEventDate}` : ''}.
 
-Si seguís interesado en asistir a una nueva capacitación, podemos ayudarte a reprogramar una nueva fecha.\n\n`;
+Si seguís interesado en asistir a una nueva capacitación, podemos ayudarte a reprogramar una nueva fecha.\n`;
 
   // Agregar capacitaciones disponibles si hay
   if (availableEvents && availableEvents.length > 0) {
@@ -158,7 +158,7 @@ Si seguís interesado en asistir a una nueva capacitación, podemos ayudarte a r
     message += `\n\nPor favor, respondenos si querés que te ayudemos a encontrar una nueva fecha.`;
   }
 
-  message += `\n¡Gracias y saludos!`;
+  message += `\n\n¡Gracias y saludos!`;
   message += `\nEquipo Monchis💪🍔`;
 
   return message;
