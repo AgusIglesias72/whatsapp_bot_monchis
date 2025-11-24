@@ -1,6 +1,9 @@
+// server.js (Express - WhatsApp Bot Backend)
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
+import pkg from 'whatsapp-web.js';
+const { MessageMedia } = pkg;
 import { 
   initializeClient,
   getClient, 
@@ -203,13 +206,13 @@ app.get('/qr/:botId', verifyApiKey, (req, res) => {
  */
 app.post('/send-message', verifyApiKey, async (req, res) => {
   try {
-    const { phone, message, botId = 'bot-1' } = req.body;
+    const { phone, message, botId = 'bot-adquisicion-prod' } = req.body;
 
     if (!phone || !message) {
       return res.status(400).json({
         error: 'Parámetros faltantes',
         required: ['phone', 'message'],
-        optional: ['botId (default: bot-1)']
+        optional: ['botId (default: bot-adquisicion-prod)']
       });
     }
 
@@ -252,13 +255,13 @@ app.post('/send-message', verifyApiKey, async (req, res) => {
  */
 app.post('/send-contextual-message', verifyApiKey, async (req, res) => {
   try {
-    const { phone, name, type, step, metadata, botId = 'bot-1' } = req.body;
+    const { phone, name, type, step, metadata, botId = 'bot-adquisicion-prod' } = req.body;
 
     if (!phone || !name || !type) {
       return res.status(400).json({
         error: 'Parámetros faltantes',
         required: ['phone', 'name', 'type'],
-        optional: ['step', 'metadata', 'botId (default: bot-1)']
+        optional: ['step', 'metadata', 'botId (default: bot-adquisicion-prod)']
       });
     }
 
@@ -346,20 +349,20 @@ app.post('/send-bulk', verifyApiKey, async (req, res) => {
         }
 
         // Seleccionar bot (distribuir o usar el especificado)
-        let botId;
+        let selectedBotId;
         if (distributeAcrossBots) {
-          botId = readyBots[botIndex % readyBots.length].clientId;
+          selectedBotId = readyBots[botIndex % readyBots.length].clientId;
           botIndex++;
         } else {
-          botId = msg.botId || 'bot-1';
+          selectedBotId = msg.botId || 'bot-adquisicion-prod';
         }
 
-        const client = getClient(botId);
+        const client = getClient(selectedBotId);
         if (!client) {
           results.push({
             phone: msg.phone,
             success: false,
-            error: `Bot ${botId} no disponible`
+            error: `Bot ${selectedBotId} no disponible`
           });
           continue;
         }
@@ -369,12 +372,13 @@ app.post('/send-bulk', verifyApiKey, async (req, res) => {
 
         results.push({
           phone: msg.phone,
-          botId: botId,
+          botId: selectedBotId,
+          chatId: chatId,
           success: true,
           sentAt: new Date().toISOString()
         });
 
-        console.log(`✅ [${i + 1}/${messages.length}] [${botId}] → ${msg.phone}`);
+        console.log(`✅ [${i + 1}/${messages.length}] [${selectedBotId}] → ${msg.phone}`);
 
         // Delay entre mensajes
         if (i < messages.length - 1) {
@@ -465,14 +469,11 @@ app.post('/logout/:botId', verifyApiKey, async (req, res) => {
 /**
  * POST /restart/:botId
  * Reinicia un bot específico (cierra y vuelve a inicializar)
- * Si tiene sesión en MongoDB → reconecta sin QR
- * Si NO tiene sesión → genera nuevo QR
  */
 app.post('/restart/:botId', verifyApiKey, async (req, res) => {
   try {
     const { botId } = req.params;
     
-    // Verificar que el botId sea válido
     const validBots = BOTS_CONFIG.map(b => b.id);
     if (!validBots.includes(botId)) {
       return res.status(400).json({
@@ -484,7 +485,6 @@ app.post('/restart/:botId', verifyApiKey, async (req, res) => {
     
     console.log(`🔄 Reiniciando ${botId}...`);
     
-    // 1. Cerrar el bot (si existe)
     const existingClient = getClient(botId);
     if (existingClient) {
       console.log(`🔴 Cerrando ${botId}...`);
@@ -493,17 +493,14 @@ app.post('/restart/:botId', verifyApiKey, async (req, res) => {
       console.log(`⚠️  ${botId} no estaba activo`);
     }
     
-    // 2. Esperar un poco para asegurar limpieza completa
     console.log(`⏳ Esperando 2 segundos...`);
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // 3. Reinicializar el bot
     console.log(`🚀 Inicializando ${botId}...`);
     await initializeClient(botId, (message, clientId) => {
       handleIncomingMessage(message, VERCEL_WEBHOOK_URL);
     });
     
-    // 4. Responder inmediatamente
     res.json({
       success: true,
       message: `Bot ${botId} reiniciado correctamente`,
@@ -535,7 +532,6 @@ app.post('/restart/:botId/fresh', verifyApiKey, async (req, res) => {
   try {
     const { botId } = req.params;
     
-    // Verificar que el botId sea válido
     const validBots = BOTS_CONFIG.map(b => b.id);
     if (!validBots.includes(botId)) {
       return res.status(400).json({
@@ -547,10 +543,8 @@ app.post('/restart/:botId/fresh', verifyApiKey, async (req, res) => {
     
     console.log(`🔄 Reinicio COMPLETO de ${botId} (sin sesión)...`);
     
-    // 1. Cerrar el bot
     await closeClient(botId);
     
-    // 2. Eliminar sesión de MongoDB manualmente
     const db = mongoose.connection.db;
     
     const filesCollection = `whatsapp-RemoteAuth-${botId}.files`;
@@ -566,10 +560,8 @@ app.post('/restart/:botId/fresh', verifyApiKey, async (req, res) => {
     
     console.log(`🗑️  Sesión de MongoDB eliminada`);
     
-    // 3. Esperar
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // 4. Reinicializar
     await initializeClient(botId, (message, clientId) => {
       handleIncomingMessage(message, VERCEL_WEBHOOK_URL);
     });
@@ -592,6 +584,10 @@ app.post('/restart/:botId/fresh', verifyApiKey, async (req, res) => {
   }
 });
 
+/**
+ * POST /send-message-with-media
+ * Envía un mensaje con imagen adjunta
+ */
 app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
   try {
     const { phone, message, imageUrl, botId = 'bot-adquisicion-prod' } = req.body;
@@ -616,30 +612,21 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
 
     console.log(`📤 [${botId}] Enviando mensaje${imageUrl ? ' con imagen' : ''} a ${phone}`);
 
-    // Si hay imagen, usar MessageMedia
     if (imageUrl) {
       try {
-        // ✅ FIX: Importar MessageMedia del paquete ya importado
-        // En lugar de const { MessageMedia } = pkg; 
-        // Usar la importación dinámica o agregar al import inicial
-        const whatsappWeb = await import('whatsapp-web.js');
-        const { MessageMedia } = whatsappWeb.default;
-        
         console.log(`📷 Descargando imagen desde: ${imageUrl}`);
         
-        // Crear media desde URL
-        const media = await MessageMedia.fromUrl(imageUrl);
+        // MessageMedia ya importado al inicio del archivo
+        const media = await MessageMedia.fromUrl(imageUrl, { unsafeMime: true });
         
-        console.log(`✅ Imagen descargada, enviando...`);
+        console.log(`✅ Imagen descargada (${media.mimetype}), enviando...`);
         
-        // Enviar con caption
         await client.sendMessage(chatId, media, { caption: message });
         
         console.log(`✅ [${botId}] Mensaje con imagen enviado exitosamente`);
       } catch (mediaError) {
         console.error('❌ Error enviando imagen:', mediaError);
         
-        // Fallback: enviar solo texto
         console.log('⚠️  Enviando solo texto como fallback...');
         await client.sendMessage(chatId, message);
         
@@ -650,11 +637,11 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
           chatId: chatId,
           hasImage: false,
           warning: 'La imagen no pudo enviarse, se envió solo el texto',
+          imageError: mediaError.message,
           sentAt: new Date().toISOString()
         });
       }
     } else {
-      // Solo texto
       await client.sendMessage(chatId, message);
       console.log(`✅ [${botId}] Mensaje de texto enviado exitosamente`);
     }
@@ -693,6 +680,7 @@ app.get('/', (req, res) => {
       bots: 'GET /bots',
       qr: 'GET /qr/:botId',
       sendMessage: 'POST /send-message',
+      sendMessageWithMedia: 'POST /send-message-with-media',
       sendContextualMessage: 'POST /send-contextual-message',
       sendBulk: 'POST /send-bulk',
       messageTypes: 'GET /message-types',
@@ -723,7 +711,6 @@ app.listen(PORT, () => {
   console.log(`${'='.repeat(50)}\n`);
 });
 
-// Manejo de señales de terminación
 process.on('SIGINT', async () => {
   console.log('\n⚠️  Señal SIGINT recibida, cerrando todos los bots...');
   await closeAllClients();
