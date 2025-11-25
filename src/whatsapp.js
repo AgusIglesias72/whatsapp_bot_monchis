@@ -1,6 +1,11 @@
 /**
- * Multi-Client WhatsApp Manager
- * Permite manejar múltiples bots de WhatsApp simultáneamente
+ * Multi-Client WhatsApp Manager - OPTIMIZADO
+ * Versión mejorada con:
+ * - Backup cada 6h (en lugar de 5min)
+ * - Reconexión automática con backoff exponencial
+ * - Sin webVersionCache fijo
+ * - Args optimizados de Chromium
+ * - Límite de reintentos con notificación
  */
 
 import pkg from 'whatsapp-web.js';
@@ -10,11 +15,16 @@ import { MongoStore } from 'wwebjs-mongo';
 import mongoose from 'mongoose';
 import os from 'os';
 
-// Map para guardar múltiples clientes
+// Maps para gestión de clientes
 const clients = new Map();
 const clientsReady = new Map();
 const clientsSessionSaved = new Map();
 const clientsQR = new Map();
+
+// ✅ NUEVO: Tracking de reconexiones
+const reconnectionAttempts = new Map(); // { clientId: { count: 0, lastAttempt: Date } }
+const MAX_RECONNECTION_ATTEMPTS = 5;
+const RECONNECTION_DELAYS = [10000, 30000, 60000, 120000, 300000]; // 10s, 30s, 1m, 2m, 5m
 
 let mongooseConnected = false;
 
@@ -36,25 +46,42 @@ async function connectMongoDB() {
 }
 
 /**
- * Obtiene configuración de Puppeteer según el sistema operativo
+ * ✅ MEJORADO: Configuración optimizada de Puppeteer/Chromium
+ * Agregados args para reducir consumo de RAM y CPU
  */
 function getPuppeteerConfig() {
   const isWindows = os.platform() === 'win32';
   const isLinux = os.platform() === 'linux';
   
+  // Args comunes optimizados para todos los OS
+  const commonArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-accelerated-2d-canvas',
+    '--no-first-run',
+    '--no-zygote',
+    '--disable-gpu',
+    // ✅ NUEVOS: Optimización adicional
+    '--disable-extensions',
+    '--disable-background-networking',
+    '--disable-default-apps',
+    '--disable-sync',
+    '--disable-translate',
+    '--metrics-recording-only',
+    '--no-default-browser-check',
+    '--mute-audio',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--disable-features=TranslateUI,BlinkGenPropertyTrees',
+  ];
+  
   if (isWindows) {
     console.log('🪟 Sistema Windows detectado - usando Chromium de Puppeteer');
     return {
       headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu'
-      ]
+      args: commonArgs
     };
   } else if (isLinux) {
     console.log('🐧 Sistema Linux detectado - usando Chromium del sistema');
@@ -62,32 +89,83 @@ function getPuppeteerConfig() {
       headless: true,
       executablePath: '/usr/bin/chromium',
       args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
+        ...commonArgs,
+        '--single-process', // Solo en Linux
         '--disable-features=AudioServiceOutOfProcess'
       ]
     };
   } else {
     return {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: commonArgs
     };
   }
 }
 
 /**
+ * ✅ NUEVO: Maneja reconexión con backoff exponencial
+ */
+async function handleReconnection(clientId, onMessageReceived) {
+  const attempts = reconnectionAttempts.get(clientId) || { count: 0, lastAttempt: null };
+  
+  if (attempts.count >= MAX_RECONNECTION_ATTEMPTS) {
+    console.error(`\n${'='.repeat(60)}`);
+    console.error(`🚨 CRÍTICO: ${clientId} agotó reintentos de reconexión`);
+    console.error(`Intentos fallidos: ${attempts.count}`);
+    console.error(`${'='.repeat(60)}\n`);
+    
+    // ✅ Aquí podrías agregar webhook/notificación
+    // await sendAlert(`Bot ${clientId} requiere intervención manual`);
+    
+    return false;
+  }
+
+  attempts.count++;
+  attempts.lastAttempt = new Date();
+  reconnectionAttempts.set(clientId, attempts);
+
+  const delay = RECONNECTION_DELAYS[Math.min(attempts.count - 1, RECONNECTION_DELAYS.length - 1)];
+  const delaySeconds = (delay / 1000).toFixed(0);
+
+  console.log(`\n${'─'.repeat(50)}`);
+  console.log(`🔄 ${clientId} - Intento de reconexión ${attempts.count}/${MAX_RECONNECTION_ATTEMPTS}`);
+  console.log(`⏳ Esperando ${delaySeconds}s antes de reintentar...`);
+  console.log(`${'─'.repeat(50)}\n`);
+
+  await new Promise(resolve => setTimeout(resolve, delay));
+
+  try {
+    const client = clients.get(clientId);
+    
+    if (client) {
+      console.log(`🔌 ${clientId} - Intentando reinicializar...`);
+      await client.initialize();
+      return true;
+    } else {
+      console.log(`🔄 ${clientId} - Reinicializando cliente completo...`);
+      await initializeClient(clientId, onMessageReceived);
+      return true;
+    }
+  } catch (error) {
+    console.error(`❌ ${clientId} - Error en reconexión:`, error.message);
+    
+    // Reintentar recursivamente
+    return handleReconnection(clientId, onMessageReceived);
+  }
+}
+
+/**
+ * ✅ NUEVO: Resetea contadores de reconexión cuando el bot está estable
+ */
+function resetReconnectionAttempts(clientId) {
+  reconnectionAttempts.delete(clientId);
+  console.log(`✨ ${clientId} - Contadores de reconexión reseteados`);
+}
+
+/**
  * Inicializa un cliente de WhatsApp
- * @param {string} clientId - ID único del cliente (ej: 'bot-1', 'bot-2')
- * @param {Function} onMessageReceived - Callback para mensajes recibidos
  */
 export async function initializeClient(clientId, onMessageReceived) {
-  // Verificar si el cliente ya existe
   if (clients.has(clientId)) {
     console.log(`⚠️  Cliente ${clientId} ya está inicializado`);
     return clients.get(clientId);
@@ -97,34 +175,31 @@ export async function initializeClient(clientId, onMessageReceived) {
   console.log(`🤖 Inicializando bot: ${clientId}`);
   console.log(`${'='.repeat(50)}\n`);
 
-  // Conectar a MongoDB
   await connectMongoDB();
 
-  // Crear store
   const store = new MongoStore({ mongoose: mongoose });
   const puppeteerConfig = getPuppeteerConfig();
 
-  // Crear cliente
   const client = new Client({
     authStrategy: new RemoteAuth({
       clientId: clientId,
       store: store,
-      backupSyncIntervalMs: 300000
+      // ✅ CAMBIADO: De 5 min (300000) a 6 horas (21600000)
+      // Ahora hace backup cada 6h en lugar de cada 5 min
+      backupSyncIntervalMs: 21600000 // 6 horas
     }),
     puppeteer: puppeteerConfig,
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-    }
+    // ✅ ELIMINADO: webVersionCache fijo
+    // Dejamos que la librería maneje las versiones automáticamente
   });
 
-  // Eventos del cliente
+  // ===== EVENTOS =====
+
   client.on('qr', (qr) => {
     console.log(`\n🔐 ===== QR para ${clientId} =====\n`);
     qrcode.generate(qr, { small: true });
     console.log(`\n📱 Escanea con WhatsApp para conectar ${clientId}\n`);
     
-    // Guardar QR para endpoint
     clientsQR.set(clientId, {
       qr: qr,
       timestamp: new Date().toISOString()
@@ -138,6 +213,9 @@ export async function initializeClient(clientId, onMessageReceived) {
     
     clientsReady.set(clientId, true);
     clientsQR.delete(clientId);
+    
+    // ✅ NUEVO: Resetear contadores si se conectó exitosamente
+    resetReconnectionAttempts(clientId);
     
     if (!clientsSessionSaved.get(clientId)) {
       console.log(`⏳ Esperando que la sesión de ${clientId} se guarde...`);
@@ -177,14 +255,34 @@ export async function initializeClient(clientId, onMessageReceived) {
     }
   });
 
-  client.on('disconnected', (reason) => {
-    console.log(`❌ ${clientId} desconectado:`, reason);
+  // ✅ MEJORADO: Manejo de desconexión con reconexión automática
+  client.on('disconnected', async (reason) => {
+    console.log(`\n⚠️  ${clientId} DESCONECTADO`);
+    console.log(`Razón: ${reason}`);
+    console.log(`Timestamp: ${new Date().toISOString()}\n`);
+    
     clientsReady.set(clientId, false);
-    clientsSessionSaved.set(clientId, false);
+    
+    // NO borrar sessionSaved - la sesión en MongoDB sigue existiendo
+    // clientsSessionSaved.set(clientId, false); // ❌ NO hacer esto
+    
+    // ✅ Intentar reconectar automáticamente
+    console.log(`🔄 ${clientId} - Iniciando secuencia de reconexión...`);
+    
+    try {
+      await handleReconnection(clientId, onMessageReceived);
+    } catch (error) {
+      console.error(`❌ ${clientId} - Error crítico en reconexión:`, error);
+    }
   });
 
   client.on('loading_screen', (percent, message) => {
     console.log(`⏳ ${clientId} cargando... ${percent}% - ${message}`);
+  });
+
+  // ✅ NUEVO: Detectar cambios de estado
+  client.on('change_state', (state) => {
+    console.log(`🔄 ${clientId} - Cambio de estado: ${state}`);
   });
 
   // Guardar cliente
@@ -192,8 +290,7 @@ export async function initializeClient(clientId, onMessageReceived) {
   clientsReady.set(clientId, false);
   clientsSessionSaved.set(clientId, false);
 
-  // Inicializar
-  console.log(`🚀 Inicializando ${clientId} con RemoteAuth...`);
+  console.log(`🚀 Inicializando ${clientId} con RemoteAuth (backup cada 6h)...`);
   client.initialize();
 
   return client;
@@ -231,12 +328,19 @@ export function getClientQR(clientId) {
  * Lista todos los clientes
  */
 export function getAllClients() {
-  return Array.from(clients.keys()).map(clientId => ({
-    clientId,
-    ready: isClientReady(clientId),
-    sessionSaved: isSessionSaved(clientId),
-    hasQR: clientsQR.has(clientId)
-  }));
+  return Array.from(clients.keys()).map(clientId => {
+    const attempts = reconnectionAttempts.get(clientId);
+    
+    return {
+      clientId,
+      ready: isClientReady(clientId),
+      sessionSaved: isSessionSaved(clientId),
+      hasQR: clientsQR.has(clientId),
+      // ✅ NUEVO: Info de reconexiones
+      reconnectionAttempts: attempts?.count || 0,
+      lastReconnectionAttempt: attempts?.lastAttempt || null,
+    };
+  });
 }
 
 /**
@@ -273,6 +377,7 @@ export async function closeClient(clientId) {
       clientsReady.delete(clientId);
       clientsSessionSaved.delete(clientId);
       clientsQR.delete(clientId);
+      reconnectionAttempts.delete(clientId); // ✅ NUEVO: Limpiar intentos
       
       console.log(`👋 Cliente ${clientId} cerrado`);
       return true;
@@ -299,4 +404,26 @@ export async function closeAllClients() {
     await mongoose.connection.close();
     console.log('👋 Desconectado de MongoDB');
   }
+}
+
+/**
+ * ✅ NUEVO: Función de diagnóstico
+ * Útil para debugging y monitoreo
+ */
+export function getSystemStatus() {
+  return {
+    totalClients: clients.size,
+    readyClients: Array.from(clientsReady.entries()).filter(([_, ready]) => ready).length,
+    sessionsSaved: Array.from(clientsSessionSaved.entries()).filter(([_, saved]) => saved).length,
+    pendingQRs: clientsQR.size,
+    reconnectionStatus: Array.from(reconnectionAttempts.entries()).map(([clientId, data]) => ({
+      clientId,
+      attempts: data.count,
+      lastAttempt: data.lastAttempt,
+      maxReached: data.count >= MAX_RECONNECTION_ATTEMPTS
+    })),
+    mongoConnected: mongooseConnected,
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
+  };
 }
