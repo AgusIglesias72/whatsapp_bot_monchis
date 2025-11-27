@@ -12,7 +12,7 @@
  * @returns {string|null} - Mensaje formateado o null si el tipo no existe
  */
 export function generateContextualMessage(type, name, step, metadata = {}) {
-  const firstName = name.split(' ')[0]; // Solo el primer nombre
+  const firstName = name.split(' ')[0];
 
   switch (type) {
     case 'application_received':
@@ -23,6 +23,9 @@ export function generateContextualMessage(type, name, step, metadata = {}) {
 
     case 'capacitation_no_show':
       return generateCapacitationNoShowMessage(firstName, metadata);
+
+    case 'capacitation_reminder':  // ✅ NUEVO
+      return generateCapacitationReminderMessage(firstName, metadata);
 
     case 'custom':
       return metadata.customMessage || null;
@@ -240,11 +243,10 @@ export function isValidMessageType(type) {
     'application_received',
     'form_incomplete',
     'custom',
-    'capacitation_no_show'
-    // 'onboarding_reminder', // COMENTADO
-    // 'welcome', // COMENTADO
-    // 'capacitation_reminder' // COMENTADO
+    'capacitation_no_show',
+    'capacitation_reminder'  // ✅ NUEVO
   ];
+  
   
   return validTypes.includes(type);
 }
@@ -257,7 +259,9 @@ export function getValidMessageTypes() {
   return [
     'application_received',
     'form_incomplete',
-    'custom'
+    'custom',
+    'capacitation_no_show',
+    'capacitation_reminder'  // ✅ NUEVO
   ];
 }
 
@@ -282,34 +286,83 @@ export function getMessageTypeInfo(type) {
         'documents', 
         'bank_info', 
         'equipment_payment'
-        // 'vehicle_info', // COMENTADO
-        // 'availability', // COMENTADO
-        // 'references' // COMENTADO
       ]
+    },
+    capacitation_no_show: {
+      name: 'No Asistió a Capacitación',
+      requiredMetadata: [],
+      optionalMetadata: ['missedEventTitle', 'missedEventDate', 'availableEvents']
+    },
+    capacitation_reminder: {  // ✅ NUEVO
+      name: 'Recordatorio de Capacitación',
+      requiredMetadata: ['eventDate', 'eventTime', 'eventLocation'],
+      optionalMetadata: ['eventTitle', 'reminderType', 'reminderNumber'],
+      validReminderTypes: ['day-before', 'same-day']
     },
     custom: {
       name: 'Mensaje Personalizado',
       requiredMetadata: ['customMessage'],
       optionalMetadata: []
     }
-    /* COMENTADOS - PARA FUTURO
-    onboarding_reminder: {
-      name: 'Recordatorio de Onboarding',
-      requiredMetadata: ['date', 'time'],
-      optionalMetadata: ['location', 'meetingUrl']
-    },
-    welcome: {
-      name: 'Mensaje de Bienvenida',
-      requiredMetadata: [],
-      optionalMetadata: []
-    },
-    capacitation_reminder: {
-      name: 'Recordatorio de Capacitación',
-      requiredMetadata: ['capacitationName', 'date', 'time'],
-      optionalMetadata: ['location', 'duration', 'meetingUrl']
-    }
-    */
   };
 
   return info[type] || null;
+}
+
+
+/**
+ * Template: Recordatorio de Capacitación
+ */
+function generateCapacitationReminderMessage(firstName, metadata) {
+  const { 
+    eventTitle = 'tu capacitación',
+    eventDate = '',
+    eventTime = '',
+    eventLocation = 'Por confirmar',
+    reminderType = 'day-before',
+    reminderNumber = 1
+  } = metadata;
+
+  if (reminderType === 'same-day') {
+    // Recordatorio del mismo día (9am)
+    return `¡Hola ${firstName}! 👋
+
+⏰ Te recordamos que tenés ${eventTitle} programada para hoy a las *${eventTime}*.
+
+📋 *Recordá traer:*
+- Cédula de identidad
+- Certificado de Antecedentes Penales *impreso*
+
+💰 *Pago inicial:* Gs. 100.000 por el kit (mochila, remera y portavasos).
+⚠️ *Solo aceptamos transferencia o tarjeta (POS). NO efectivo.*
+
+📱 *Tip:* Andá descargando la app *Monchis Express* para ir adelantando.
+
+Si tenés algún inconveniente para asistir, por favor avisanos respondiendo este mensaje.
+
+¡Te esperamos! 🚗
+Equipo Monchis 💪🍔`;
+
+  } else {
+    // Recordatorio del día anterior (19:00)
+    return `¡Hola ${firstName}! 👋
+
+Te recordamos que mañana tenés ${eventTitle}.
+
+📅 *Fecha:* ${eventDate} a las ${eventTime}
+
+📋 *Recordá traer:*
+- Cédula de identidad
+- Certificado de Antecedentes Penales *impreso*
+
+💰 *Pago inicial:* Gs. 100.000 por el kit (mochila, remera y portavasos).
+⚠️ *Solo aceptamos transferencia o tarjeta (POS). NO efectivo.*
+
+📱 *Tip:* Andá descargando la app *Monchis Express* para ir adelantando.
+
+Si tenés algún inconveniente para asistir, por favor avisanos respondiendo este mensaje.
+
+¡Te esperamos! 🚗
+Equipo Monchis 💪🍔`;
+  }
 }
