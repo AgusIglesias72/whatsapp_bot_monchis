@@ -331,7 +331,7 @@ function generateCapacitationReminderMessage(firstName, metadata) {
 
 📋 *Recordá traer:*
 - Cédula de identidad
-- Certificado de Antecedentes Penales *impreso*
+- Certificado de Antecedentes Policiales *impreso*
 
 💰 *Pago inicial:* Gs. 100.000 por el kit (mochila, remera y portavasos).
 ⚠️ *Solo aceptamos transferencia o tarjeta (POS). NO efectivo.*
