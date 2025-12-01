@@ -383,7 +383,7 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
  */
 app.post('/send-bulk', verifyApiKey, async (req, res) => {
   try {
-    const { messages, distributeAcrossBots = true, delayMs = 2000 } = req.body;
+    const { messages, distributeAcrossBots = true, delayMs = 10000 } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({
@@ -495,7 +495,7 @@ app.post('/send-bulk-media', verifyApiKey, async (req, res) => {
       messages, 
       imageUrl, 
       distributeAcrossBots = true, 
-      delayMs = 2000 
+      delayMs = 10000 
     } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
