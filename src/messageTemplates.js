@@ -27,6 +27,9 @@ export function generateContextualMessage(type, name, step, metadata = {}) {
     case 'capacitation_reminder':  // ✅ NUEVO
       return generateCapacitationReminderMessage(firstName, metadata);
 
+    case 'document_rejected':  // ✅ NUEVO
+      return generateDocumentRejectedMessage(firstName, metadata);
+
     case 'custom':
       return metadata.customMessage || null;
 
@@ -244,10 +247,11 @@ export function isValidMessageType(type) {
     'form_incomplete',
     'custom',
     'capacitation_no_show',
-    'capacitation_reminder'  // ✅ NUEVO
+    'capacitation_reminder',  // ✅ NUEVO
+    'document_rejected'  // ✅ NUEVO
   ];
-  
-  
+
+
   return validTypes.includes(type);
 }
 
@@ -261,7 +265,8 @@ export function getValidMessageTypes() {
     'form_incomplete',
     'custom',
     'capacitation_no_show',
-    'capacitation_reminder'  // ✅ NUEVO
+    'capacitation_reminder',  // ✅ NUEVO
+    'document_rejected'  // ✅ NUEVO
   ];
 }
 
@@ -299,6 +304,12 @@ export function getMessageTypeInfo(type) {
       optionalMetadata: ['eventTitle', 'reminderType', 'reminderNumber'],
       validReminderTypes: ['day-before', 'same-day']
     },
+    document_rejected: {  // ✅ NUEVO
+      name: 'Documento Rechazado',
+      requiredMetadata: ['documentTypeName', 'rejectionReason'],
+      optionalMetadata: ['documentType', 'rejectedAt', 'documentId', 'triggeredBy', 'adminId'],
+      validDocumentTypes: ['CRIMINAL_RECORD']
+    },
     custom: {
       name: 'Mensaje Personalizado',
       requiredMetadata: ['customMessage'],
@@ -309,6 +320,33 @@ export function getMessageTypeInfo(type) {
   return info[type] || null;
 }
 
+
+/**
+ * Template: Documento Rechazado
+ */
+function generateDocumentRejectedMessage(firstName, metadata) {
+  const {
+    documentType = '',
+    documentTypeName = 'Certificado de Antecedentes Penales',
+    rejectionReason = 'Motivo no especificado'
+  } = metadata;
+
+  // Validación: Solo aceptar CRIMINAL_RECORD
+  if (documentType && documentType !== 'CRIMINAL_RECORD') {
+    console.error(`Tipo de documento no soportado: ${documentType}. Solo se acepta CRIMINAL_RECORD.`);
+    return null;
+  }
+
+  return `Hola ${firstName},
+
+Tu documento de ${documentTypeName} ha sido rechazado por el siguiente motivo:
+
+📋 *Motivo:* ${rejectionReason}
+
+Por favor, envianos por este medio el documento corregido para avanzar con tu postulación.
+
+Si necesitas ayuda, contáctanos respondiendo a este mensaje.`;
+}
 
 /**
  * Template: Recordatorio de Capacitación

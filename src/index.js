@@ -263,6 +263,26 @@ app.post('/send-contextual-message', verifyApiKey, async (req, res) => {
       });
     }
 
+    // Validación específica para document_rejected
+    if (type === 'document_rejected') {
+      if (!metadata || !metadata.documentTypeName || !metadata.rejectionReason) {
+        return res.status(400).json({
+          error: 'Parámetros faltantes para document_rejected',
+          required: ['metadata.documentTypeName', 'metadata.rejectionReason'],
+          optional: ['metadata.documentType', 'metadata.rejectedAt', 'metadata.documentId', 'metadata.triggeredBy', 'metadata.adminId']
+        });
+      }
+
+      // Validar que sea CRIMINAL_RECORD si se proporciona documentType
+      if (metadata.documentType && metadata.documentType !== 'CRIMINAL_RECORD') {
+        return res.status(400).json({
+          error: 'Tipo de documento no soportado',
+          message: 'Solo se acepta documentType: CRIMINAL_RECORD',
+          received: metadata.documentType
+        });
+      }
+    }
+
     if (!isClientReady(botId)) {
       return res.status(503).json({
         error: `Bot ${botId} no está conectado`,
