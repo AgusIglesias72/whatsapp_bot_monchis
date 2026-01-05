@@ -27,6 +27,7 @@ const app = express();
 const corsOptions = {
   origin: [
     'https://monchis-drivers.vercel.app',
+    'https://driversmonchis.vercel.app',
     'http://localhost:3000',
     'http://localhost:3001'
   ],
