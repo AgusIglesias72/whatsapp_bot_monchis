@@ -31,11 +31,11 @@ RUN apt-get update && apt-get install -y \
 # Directorio de trabajo
 WORKDIR /app
 
-# Copiar package.json y package-lock.json
-COPY package*.json ./
+# Copiar package.json
+COPY package.json ./
 
 # Instalar dependencias de Node.js (solo producción)
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --production --no-package-lock && npm cache clean --force
 
 # Copiar código fuente
 COPY . .
