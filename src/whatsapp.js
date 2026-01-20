@@ -114,11 +114,11 @@ function getPuppeteerConfig() {
       executablePath: '/usr/bin/chromium',
       args: [
         ...commonArgs,
-        '--single-process', // Solo en Linux
+        // REMOVIDO: --single-process causa "Execution context was destroyed"
         '--disable-features=AudioServiceOutOfProcess',
-        '--disable-crash-reporter', // Deshabilitar crash reporter que causa el error
-        '--no-crash-upload', // No subir crashes
-        '--disable-breakpad', // Deshabilitar breakpad (crash handler)
+        '--disable-crash-reporter',
+        '--no-crash-upload',
+        '--disable-breakpad',
       ]
     };
   } else {
