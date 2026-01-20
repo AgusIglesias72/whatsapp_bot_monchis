@@ -238,6 +238,9 @@ export async function initializeClient(clientId, onMessageReceived) {
     puppeteer: puppeteerConfig,
     // ✅ ELIMINADO: webVersionCache fijo
     // Dejamos que la librería maneje las versiones automáticamente
+
+    // ✅ AGREGADO: Opciones para manejar contextos de navegación
+    authTimeoutMs: 0, // Sin timeout de autenticación (para entornos lentos)
   });
 
   // ===== EVENTOS =====
