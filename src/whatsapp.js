@@ -236,15 +236,6 @@ export async function initializeClient(clientId, onMessageReceived) {
       backupSyncIntervalMs: 21600000 // 6 horas
     }),
     puppeteer: puppeteerConfig,
-
-    // ✅ AGREGADO: webVersionCache estable conocido que funciona
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-    },
-
-    // ✅ AGREGADO: Opciones para manejar contextos de navegación
-    authTimeoutMs: 0, // Sin timeout de autenticación (para entornos lentos)
   });
 
   // ===== EVENTOS =====
