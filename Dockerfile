@@ -1,5 +1,6 @@
 # Dockerfile optimizado para WhatsApp Bot - Railway
 # Versión con reducción de RAM y dependencias mínimas necesarias
+# Build date: 2026-01-20
 FROM node:20-bullseye-slim
 
 # Instalar SOLO dependencias esenciales para Chromium (reducir tamaño de imagen)
