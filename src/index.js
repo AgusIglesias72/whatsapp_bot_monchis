@@ -96,7 +96,7 @@ initBots();
  */
 app.get('/health', (req, res) => {
   const clients = getAllClients();
-  
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -105,6 +105,83 @@ app.get('/health', (req, res) => {
     bots: clients
   });
 });
+
+/**
+ * GET /memory
+ * Monitoreo detallado de memoria
+ */
+app.get('/memory', verifyApiKey, (req, res) => {
+  const memoryUsage = process.memoryUsage();
+  const clients = getAllClients();
+
+  // Convertir bytes a MB
+  const formatMB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
+
+  res.json({
+    timestamp: new Date().toISOString(),
+    uptime: {
+      seconds: process.uptime(),
+      formatted: `${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m`
+    },
+    memory: {
+      rss: `${formatMB(memoryUsage.rss)} MB`,
+      heapTotal: `${formatMB(memoryUsage.heapTotal)} MB`,
+      heapUsed: `${formatMB(memoryUsage.heapUsed)} MB`,
+      external: `${formatMB(memoryUsage.external)} MB`,
+      arrayBuffers: `${formatMB(memoryUsage.arrayBuffers)} MB`,
+      heapUsagePercent: `${((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100).toFixed(1)}%`
+    },
+    bots: {
+      total: clients.length,
+      ready: clients.filter(c => c.ready).length,
+      withSession: clients.filter(c => c.sessionSaved).length,
+      reconnecting: clients.filter(c => c.reconnectionAttempts > 0).length
+    },
+    limits: {
+      maxOldSpaceSize: '512 MB (configurado en package.json)',
+      gcEnabled: !!global.gc
+    },
+    recommendations: getMemoryRecommendations(memoryUsage)
+  });
+});
+
+/**
+ * Helper: Genera recomendaciones basadas en uso de memoria
+ */
+function getMemoryRecommendations(memoryUsage) {
+  const recommendations = [];
+  const heapUsedMB = memoryUsage.heapUsed / 1024 / 1024;
+  const heapTotalMB = memoryUsage.heapTotal / 1024 / 1024;
+  const heapPercent = (memoryUsage.heapUsed / memoryUsage.heapTotal) * 100;
+
+  if (heapPercent > 90) {
+    recommendations.push({
+      level: 'critical',
+      message: 'Uso de heap crítico (>90%). Considerar reiniciar el servicio.'
+    });
+  } else if (heapPercent > 75) {
+    recommendations.push({
+      level: 'warning',
+      message: 'Uso de heap alto (>75%). Monitorear de cerca.'
+    });
+  }
+
+  if (heapUsedMB > 400) {
+    recommendations.push({
+      level: 'warning',
+      message: 'Heap usado supera 400MB. Verificar posibles fugas de memoria.'
+    });
+  }
+
+  if (recommendations.length === 0) {
+    recommendations.push({
+      level: 'ok',
+      message: 'Uso de memoria dentro de rangos normales.'
+    });
+  }
+
+  return recommendations;
+}
 
 /**
  * GET /bots
@@ -348,22 +425,29 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
     console.log(`📤 [${botId}] Enviando mensaje${imageUrl ? ' con imagen' : ''} a ${phone}`);
 
     if (imageUrl) {
+      let media = null;
       try {
         console.log(`📷 Descargando imagen desde: ${imageUrl}`);
-        
-        const media = await MessageMedia.fromUrl(imageUrl, { unsafeMime: true });
-        
+
+        media = await MessageMedia.fromUrl(imageUrl, { unsafeMime: true });
+
         console.log(`✅ Imagen descargada (${media.mimetype}), enviando...`);
-        
+
         await client.sendMessage(chatId, media, { caption: message });
-        
+
         console.log(`✅ [${botId}] Mensaje con imagen enviado exitosamente`);
+
+        // ✅ Liberar imagen de memoria inmediatamente
+        media = null;
       } catch (mediaError) {
         console.error('❌ Error enviando imagen:', mediaError);
-        
+
+        // ✅ Liberar imagen en caso de error
+        media = null;
+
         console.log('⚠️  Enviando solo texto como fallback...');
         await client.sendMessage(chatId, message);
-        
+
         return res.json({
           success: true,
           botId: botId,
@@ -487,6 +571,12 @@ app.post('/send-bulk', verifyApiKey, async (req, res) => {
     const failCount = results.filter(r => !r.success).length;
 
     console.log(`📊 Resumen: ${successCount} exitosos, ${failCount} fallidos`);
+
+    // ✅ Forzar recolección de basura después de envío masivo
+    if (global.gc) {
+      global.gc();
+      console.log('🧹 Recolección de basura ejecutada después de envío masivo');
+    }
 
     res.json({
       summary: {
@@ -661,6 +751,15 @@ app.post('/send-bulk-media', verifyApiKey, async (req, res) => {
     const textOnlyCount = results.filter(r => r.success && !r.hasImage).length;
 
     console.log(`📊 Resumen: ${successCount} exitosos (${withImageCount} con imagen, ${textOnlyCount} solo texto), ${failCount} fallidos`);
+
+    // ✅ Liberar imagen de memoria
+    media = null;
+
+    // ✅ Forzar recolección de basura después de envío masivo con imágenes
+    if (global.gc) {
+      global.gc();
+      console.log('🧹 Recolección de basura ejecutada después de envío masivo con imágenes');
+    }
 
     res.json({
       summary: {
@@ -854,10 +953,11 @@ app.get('/', (req, res) => {
   
   res.json({
     service: 'WhatsApp Multi-Bot API - Monchis Drivers',
-    version: '3.1.0',
+    version: '3.2.0',
     bots: clients,
     endpoints: {
       health: 'GET /health',
+      memory: 'GET /memory (monitoreo de RAM)',
       bots: 'GET /bots',
       qr: 'GET /qr/:botId',
       sendMessage: 'POST /send-message',
