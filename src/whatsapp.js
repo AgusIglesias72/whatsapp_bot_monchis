@@ -115,7 +115,10 @@ function getPuppeteerConfig() {
       args: [
         ...commonArgs,
         '--single-process', // Solo en Linux
-        '--disable-features=AudioServiceOutOfProcess'
+        '--disable-features=AudioServiceOutOfProcess',
+        '--disable-crash-reporter', // Deshabilitar crash reporter que causa el error
+        '--no-crash-upload', // No subir crashes
+        '--disable-breakpad', // Deshabilitar breakpad (crash handler)
       ]
     };
   } else {
