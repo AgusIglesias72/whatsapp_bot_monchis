@@ -48,11 +48,6 @@ ENV NODE_ENV=production
 # Puerto (Railway lo asigna dinámicamente, pero lo exponemos)
 EXPOSE 3000
 
-# Usuario no-root para mayor seguridad
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-RUN chown -R appuser:appuser /app
-USER appuser
-
 # Comando de inicio (npm start ejecutará el comando optimizado del package.json)
 CMD ["npm", "start"]
 
