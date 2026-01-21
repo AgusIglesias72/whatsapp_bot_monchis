@@ -53,7 +53,7 @@ function getPuppeteerConfig() {
   const isWindows = os.platform() === 'win32';
   const isLinux = os.platform() === 'linux';
   
-  // Args comunes optimizados para reducir RAM
+  // Args comunes optimizados para todos los OS
   const commonArgs = [
     '--no-sandbox',
     '--disable-setuid-sandbox',
@@ -62,6 +62,7 @@ function getPuppeteerConfig() {
     '--no-first-run',
     '--no-zygote',
     '--disable-gpu',
+    // ✅ NUEVOS: Optimización adicional
     '--disable-extensions',
     '--disable-background-networking',
     '--disable-default-apps',
@@ -74,31 +75,6 @@ function getPuppeteerConfig() {
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding',
     '--disable-features=TranslateUI,BlinkGenPropertyTrees',
-    // ✅ OPTIMIZACIONES ADICIONALES DE RAM
-    '--disable-software-rasterizer',
-    '--disable-canvas-aa',
-    '--disable-2d-canvas-clip-aa',
-    '--disable-gl-drawing-for-tests',
-    '--disable-webgl',
-    '--disable-webgl2',
-    '--disable-databases',
-    '--disable-javascript-harmony-shipping',
-    '--disable-notifications',
-    '--disable-offer-store-unmasked-wallet-cards',
-    '--disable-offer-upload-credit-cards',
-    '--disable-permissions-api',
-    '--disable-presentation-api',
-    '--disable-print-preview',
-    '--disable-speech-api',
-    '--disable-speech-synthesis-api',
-    '--disk-cache-size=1',
-    '--media-cache-size=1',
-    '--aggressive-cache-discard',
-    '--disable-cache',
-    '--disable-application-cache',
-    '--disable-offline-load-stale-cache',
-    '--disable-gpu-shader-disk-cache',
-    '--js-flags="--max-old-space-size=256"',
   ];
   
   if (isWindows) {
@@ -114,11 +90,8 @@ function getPuppeteerConfig() {
       executablePath: '/usr/bin/chromium',
       args: [
         ...commonArgs,
-        // REMOVIDO: --single-process causa "Execution context was destroyed"
-        '--disable-features=AudioServiceOutOfProcess',
-        '--disable-crash-reporter',
-        '--no-crash-upload',
-        '--disable-breakpad',
+        '--single-process', // Solo en Linux
+        '--disable-features=AudioServiceOutOfProcess'
       ]
     };
   } else {
@@ -130,40 +103,20 @@ function getPuppeteerConfig() {
 }
 
 /**
- * ✅ MEJORADO: Maneja reconexión con backoff exponencial + liberación de memoria
+ * ✅ NUEVO: Maneja reconexión con backoff exponencial
  */
 async function handleReconnection(clientId, onMessageReceived) {
   const attempts = reconnectionAttempts.get(clientId) || { count: 0, lastAttempt: null };
-
+  
   if (attempts.count >= MAX_RECONNECTION_ATTEMPTS) {
     console.error(`\n${'='.repeat(60)}`);
     console.error(`🚨 CRÍTICO: ${clientId} agotó reintentos de reconexión`);
     console.error(`Intentos fallidos: ${attempts.count}`);
     console.error(`${'='.repeat(60)}\n`);
-
-    // ✅ NUEVO: Liberar cliente zombie para evitar fugas de memoria
-    console.log(`🗑️  Liberando cliente zombie ${clientId}...`);
-    const zombieClient = clients.get(clientId);
-
-    if (zombieClient) {
-      try {
-        await zombieClient.destroy();
-        console.log(`💀 Cliente zombie ${clientId} destruido`);
-      } catch (error) {
-        console.error(`⚠️  Error destruyendo zombie ${clientId}:`, error.message);
-      }
-
-      clients.delete(clientId);
-      clientsReady.set(clientId, false);
-      clientsQR.delete(clientId);
-
-      // Forzar recolección de basura si está disponible
-      if (global.gc) {
-        global.gc();
-        console.log(`🧹 Recolección de basura forzada después de liberar ${clientId}`);
-      }
-    }
-
+    
+    // ✅ Aquí podrías agregar webhook/notificación
+    // await sendAlert(`Bot ${clientId} requiere intervención manual`);
+    
     return false;
   }
 
@@ -236,6 +189,8 @@ export async function initializeClient(clientId, onMessageReceived) {
       backupSyncIntervalMs: 21600000 // 6 horas
     }),
     puppeteer: puppeteerConfig,
+    // ✅ ELIMINADO: webVersionCache fijo
+    // Dejamos que la librería maneje las versiones automáticamente
   });
 
   // ===== EVENTOS =====

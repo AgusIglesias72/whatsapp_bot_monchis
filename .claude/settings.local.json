@@ -4,7 +4,12 @@
       "Bash(git add:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: add document_rejected notification type\n\n- Add document_rejected message template for Criminal Record rejections\n- Implement validation for required fields (documentTypeName, rejectionReason)\n- Restrict to CRIMINAL_RECORD document type only\n- Return 400 errors for missing/invalid parameters\n- Add comprehensive test script for all scenarios\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git push:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git mv:*)",
+      "Bash(cat:*)",
+      "Bash(npm view:*)",
+      "Bash(git checkout:*)",
+      "Bash(git rm:*)"
     ]
   }
 }
