@@ -189,8 +189,12 @@ export async function initializeClient(clientId, onMessageReceived) {
       backupSyncIntervalMs: 21600000 // 6 horas
     }),
     puppeteer: puppeteerConfig,
-    // ✅ ELIMINADO: webVersionCache fijo
-    // Dejamos que la librería maneje las versiones automáticamente
+    // ✅ AGREGADO: Configuraciones para evitar timeouts y que se quede trabado
+    qrTimeoutMs: 0,              // Sin timeout de QR
+    authTimeoutMs: 0,            // Sin timeout de autenticación (crítico para Railway)
+    takeoverOnConflict: true,    // Manejar conflictos de sesión automáticamente
+    takeoverTimeoutMs: 0,        // Sin timeout en takeover
+    restartOnAuthFail: true,     // Auto-reiniciar si falla la autenticación
   });
 
   // ===== EVENTOS =====
