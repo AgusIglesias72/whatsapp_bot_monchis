@@ -186,12 +186,22 @@ export async function initializeClient(clientId, onMessageReceived) {
       store: store,
       backupSyncIntervalMs: 300000 // 5 minutos (recomendado por wwebjs.dev)
     }),
-    puppeteer: puppeteerConfig,
+    puppeteer: {
+      ...puppeteerConfig,
+      // Agregar user agent para evitar detección
+      args: [
+        ...(puppeteerConfig.args || []),
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      ]
+    },
     qrTimeoutMs: 0,              // Sin timeout de QR
     authTimeoutMs: 0,            // Sin timeout de autenticación (crítico para Railway)
     takeoverOnConflict: true,    // Manejar conflictos de sesión automáticamente
     takeoverTimeoutMs: 0,        // Sin timeout en takeover
-    restartOnAuthFail: true      // Auto-reiniciar si falla la autenticación
+    restartOnAuthFail: true,     // Auto-reiniciar si falla la autenticación
+    // ✅ CRÍTICO: Deshabilitar auto-markAsRead para evitar error "markedUnread"
+    // Este error ocurre con chats que usan el nuevo formato LID
+    markMessagesAsRead: false
   });
 
   // ===== EVENTOS =====
