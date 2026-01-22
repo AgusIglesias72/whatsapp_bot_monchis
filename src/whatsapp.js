@@ -395,16 +395,21 @@ export function formatPhoneNumber(phone) {
 
 /**
  * Verifica si un número/contacto existe en WhatsApp
- * Usa getNumberId que es compatible con LID
+ * Retorna el formato básico que WhatsApp Web manejará internamente
  */
 export async function verifyPhoneNumber(client, phone) {
   try {
     const formattedPhone = formatPhoneNumber(phone);
+
+    // Intentar obtener el numberId para verificar si existe
     const numberId = await client.getNumberId(formattedPhone.replace('@c.us', ''));
 
     if (numberId) {
-      console.log(`✅ Número verificado: ${phone} -> ${numberId._serialized}`);
-      return numberId._serialized;
+      // Siempre usar el formato básico del número sin @
+      // WhatsApp Web manejará internamente si es @c.us o @lid
+      const phoneOnly = formattedPhone.replace('@c.us', '');
+      console.log(`✅ Número verificado: ${phone} -> usando ${phoneOnly}`);
+      return phoneOnly; // Retornar solo el número sin sufijo
     } else {
       console.warn(`⚠️  Número no encontrado en WhatsApp: ${phone}`);
       return null;
