@@ -184,17 +184,14 @@ export async function initializeClient(clientId, onMessageReceived) {
     authStrategy: new RemoteAuth({
       clientId: clientId,
       store: store,
-      // ✅ CAMBIADO: De 5 min (300000) a 6 horas (21600000)
-      // Ahora hace backup cada 6h en lugar de cada 5 min
-      backupSyncIntervalMs: 21600000 // 6 horas
+      backupSyncIntervalMs: 300000 // 5 minutos (recomendado por wwebjs.dev)
     }),
     puppeteer: puppeteerConfig,
-    // ✅ AGREGADO: Configuraciones para evitar timeouts y que se quede trabado
     qrTimeoutMs: 0,              // Sin timeout de QR
     authTimeoutMs: 0,            // Sin timeout de autenticación (crítico para Railway)
     takeoverOnConflict: true,    // Manejar conflictos de sesión automáticamente
     takeoverTimeoutMs: 0,        // Sin timeout en takeover
-    restartOnAuthFail: true,     // Auto-reiniciar si falla la autenticación
+    restartOnAuthFail: true      // Auto-reiniciar si falla la autenticación
   });
 
   // ===== EVENTOS =====
@@ -228,6 +225,7 @@ export async function initializeClient(clientId, onMessageReceived) {
 
   client.on('authenticated', () => {
     console.log(`🔓 ${clientId} autenticado exitosamente`);
+    console.log(`⏳ ${clientId} - Esperando ~1 minuto para que la sesión se guarde en MongoDB...`);
   });
 
   client.on('auth_failure', (msg) => {
@@ -236,8 +234,12 @@ export async function initializeClient(clientId, onMessageReceived) {
 
   client.on('remote_session_saved', () => {
     clientsSessionSaved.set(clientId, true);
-    console.log(`💾 ✅ Sesión de ${clientId} guardada en MongoDB`);
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`💾 ✅ SESIÓN GUARDADA: ${clientId}`);
+    console.log(`📍 Ubicación: MongoDB`);
+    console.log(`🔄 Backup automático cada 5 minutos`);
     console.log(`✨ ${clientId} persistirá entre reinicios`);
+    console.log(`${'='.repeat(60)}\n`);
   });
 
   client.on('message', async (message) => {
