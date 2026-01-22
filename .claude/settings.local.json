@@ -10,7 +10,8 @@
       "Bash(npm view:*)",
       "Bash(git checkout:*)",
       "Bash(git rm:*)",
-      "Bash(git ls-tree:*)"
+      "Bash(git ls-tree:*)",
+      "Bash(git fetch:*)"
     ]
   }
 }
