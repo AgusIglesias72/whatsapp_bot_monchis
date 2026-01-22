@@ -4,14 +4,14 @@ import dotenv from 'dotenv';
 import cors from 'cors';
 import pkg from 'whatsapp-web.js';
 const { MessageMedia } = pkg;
-import { 
+import {
   initializeClient,
-  getClient, 
+  getClient,
   isClientReady,
   isSessionSaved,
   getClientQR,
   getAllClients,
-  formatPhoneNumber,
+  verifyPhoneNumber,
   closeClient,
   closeAllClients
 } from './whatsapp.js';
@@ -294,19 +294,29 @@ app.post('/send-message', verifyApiKey, async (req, res) => {
     }
 
     const client = getClient(botId);
-    const chatId = formatPhoneNumber(phone);
 
-    console.log(`📤 [${botId}] Enviando mensaje a ${phone}`);
+    console.log(`📤 [${botId}] Verificando y enviando mensaje a ${phone}`);
 
-    await client.sendMessage(chatId, message);
+    // Verificar que el número existe en WhatsApp y obtener su ID correcto (LID compatible)
+    const verifiedChatId = await verifyPhoneNumber(client, phone);
 
-    console.log(`✅ [${botId}] Mensaje enviado exitosamente`);
+    if (!verifiedChatId) {
+      return res.status(404).json({
+        error: 'Número no encontrado en WhatsApp',
+        phone: phone,
+        details: 'El número no está registrado en WhatsApp o el formato es incorrecto'
+      });
+    }
+
+    await client.sendMessage(verifiedChatId, message);
+
+    console.log(`✅ [${botId}] Mensaje enviado exitosamente a ${verifiedChatId}`);
 
     res.json({
       success: true,
       botId: botId,
       phone: phone,
-      chatId: chatId,
+      chatId: verifiedChatId,
       sentAt: new Date().toISOString()
     });
 
@@ -370,18 +380,29 @@ app.post('/send-contextual-message', verifyApiKey, async (req, res) => {
 
     const message = generateContextualMessage(type, name, step, metadata || {});
     const client = getClient(botId);
-    const chatId = formatPhoneNumber(phone);
-    
-    console.log(`📤 [${botId}] Enviando mensaje contextual tipo: ${type}`);
-    
-    await client.sendMessage(chatId, message);
 
-    console.log(`✅ [${botId}] Mensaje contextual enviado`);
+    console.log(`📤 [${botId}] Verificando y enviando mensaje contextual tipo: ${type} a ${phone}`);
+
+    // Verificar que el número existe en WhatsApp
+    const verifiedChatId = await verifyPhoneNumber(client, phone);
+
+    if (!verifiedChatId) {
+      return res.status(404).json({
+        error: 'Número no encontrado en WhatsApp',
+        phone: phone,
+        details: 'El número no está registrado en WhatsApp o el formato es incorrecto'
+      });
+    }
+
+    await client.sendMessage(verifiedChatId, message);
+
+    console.log(`✅ [${botId}] Mensaje contextual enviado a ${verifiedChatId}`);
 
     res.json({
       success: true,
       botId: botId,
       phone: phone,
+      chatId: verifiedChatId,
       name: name,
       type: type,
       sentAt: new Date().toISOString()
@@ -420,9 +441,19 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
     }
 
     const client = getClient(botId);
-    const chatId = formatPhoneNumber(phone);
 
-    console.log(`📤 [${botId}] Enviando mensaje${imageUrl ? ' con imagen' : ''} a ${phone}`);
+    console.log(`📤 [${botId}] Verificando número y enviando mensaje${imageUrl ? ' con imagen' : ''} a ${phone}`);
+
+    // Verificar que el número existe en WhatsApp
+    const verifiedChatId = await verifyPhoneNumber(client, phone);
+
+    if (!verifiedChatId) {
+      return res.status(404).json({
+        error: 'Número no encontrado en WhatsApp',
+        phone: phone,
+        details: 'El número no está registrado en WhatsApp o el formato es incorrecto'
+      });
+    }
 
     if (imageUrl) {
       let media = null;
@@ -433,7 +464,7 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
 
         console.log(`✅ Imagen descargada (${media.mimetype}), enviando...`);
 
-        await client.sendMessage(chatId, media, { caption: message });
+        await client.sendMessage(verifiedChatId, media, { caption: message });
 
         console.log(`✅ [${botId}] Mensaje con imagen enviado exitosamente`);
 
@@ -446,13 +477,13 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
         media = null;
 
         console.log('⚠️  Enviando solo texto como fallback...');
-        await client.sendMessage(chatId, message);
+        await client.sendMessage(verifiedChatId, message);
 
         return res.json({
           success: true,
           botId: botId,
           phone: phone,
-          chatId: chatId,
+          chatId: verifiedChatId,
           hasImage: false,
           warning: 'La imagen no pudo enviarse, se envió solo el texto',
           imageError: mediaError.message,
@@ -460,7 +491,7 @@ app.post('/send-message-with-media', verifyApiKey, async (req, res) => {
         });
       }
     } else {
-      await client.sendMessage(chatId, message);
+      await client.sendMessage(verifiedChatId, message);
       console.log(`✅ [${botId}] Mensaje de texto enviado exitosamente`);
     }
 
@@ -540,13 +571,23 @@ app.post('/send-bulk', verifyApiKey, async (req, res) => {
           continue;
         }
 
-        const chatId = formatPhoneNumber(msg.phone);
-        await client.sendMessage(chatId, msg.message);
+        // Verificar número antes de enviar
+        const verifiedChatId = await verifyPhoneNumber(client, msg.phone);
+        if (!verifiedChatId) {
+          results.push({
+            phone: msg.phone,
+            success: false,
+            error: 'Número no encontrado en WhatsApp'
+          });
+          continue;
+        }
+
+        await client.sendMessage(verifiedChatId, msg.message);
 
         results.push({
           phone: msg.phone,
+          chatId: verifiedChatId,
           botId: selectedBotId,
-          chatId: chatId,
           success: true,
           sentAt: new Date().toISOString()
         });
@@ -684,16 +725,25 @@ app.post('/send-bulk-media', verifyApiKey, async (req, res) => {
           continue;
         }
 
-        const chatId = formatPhoneNumber(msg.phone);
-        
+        // Verificar número antes de enviar
+        const verifiedChatId = await verifyPhoneNumber(client, msg.phone);
+        if (!verifiedChatId) {
+          results.push({
+            phone: msg.phone,
+            success: false,
+            error: 'Número no encontrado en WhatsApp'
+          });
+          continue;
+        }
+
         try {
           // Enviar con imagen
-          await client.sendMessage(chatId, media, { caption: msg.message });
+          await client.sendMessage(verifiedChatId, media, { caption: msg.message });
 
           results.push({
             phone: msg.phone,
             botId: selectedBotId,
-            chatId: chatId,
+            chatId: verifiedChatId,
             success: true,
             hasImage: true,
             sentAt: new Date().toISOString()
@@ -704,14 +754,14 @@ app.post('/send-bulk-media', verifyApiKey, async (req, res) => {
         } catch (sendError) {
           // Fallback: intentar enviar solo texto
           console.error(`⚠️  Error enviando imagen a ${msg.phone}, intentando solo texto...`);
-          
+
           try {
-            await client.sendMessage(chatId, msg.message);
-            
+            await client.sendMessage(verifiedChatId, msg.message);
+
             results.push({
               phone: msg.phone,
               botId: selectedBotId,
-              chatId: chatId,
+              chatId: verifiedChatId,
               success: true,
               hasImage: false,
               warning: 'Imagen falló, se envió solo texto',

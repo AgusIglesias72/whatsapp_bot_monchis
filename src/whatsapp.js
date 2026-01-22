@@ -350,20 +350,59 @@ export function getAllClients() {
 }
 
 /**
- * Formatea número de teléfono
+ * Formatea número de teléfono para WhatsApp
+ * Soporta múltiples países y formatos
  */
 export function formatPhoneNumber(phone) {
+  // Remover todos los caracteres no numéricos
   let cleanPhone = phone.replace(/\D/g, '');
-  
-  if (!cleanPhone.startsWith('54') && cleanPhone.length === 10) {
-    cleanPhone = '54' + cleanPhone;
+
+  // Si empieza con 0, removerlo (formato local)
+  if (cleanPhone.startsWith('0')) {
+    cleanPhone = cleanPhone.substring(1);
   }
-  
-  if (!cleanPhone.includes('@c.us')) {
+
+  // Auto-detectar país si no tiene código de país
+  // Argentina (54): 10 dígitos después del código
+  // Paraguay (595): 9 dígitos después del código
+  if (!cleanPhone.startsWith('54') && !cleanPhone.startsWith('595') && !cleanPhone.startsWith('1')) {
+    if (cleanPhone.length === 10) {
+      // Probablemente Argentina
+      cleanPhone = '54' + cleanPhone;
+    } else if (cleanPhone.length === 9) {
+      // Probablemente Paraguay
+      cleanPhone = '595' + cleanPhone;
+    }
+  }
+
+  // Agregar @c.us solo si no tiene ya un sufijo
+  if (!cleanPhone.includes('@')) {
     cleanPhone = cleanPhone + '@c.us';
   }
-  
+
   return cleanPhone;
+}
+
+/**
+ * Verifica si un número/contacto existe en WhatsApp
+ * Usa getNumberId que es compatible con LID
+ */
+export async function verifyPhoneNumber(client, phone) {
+  try {
+    const formattedPhone = formatPhoneNumber(phone);
+    const numberId = await client.getNumberId(formattedPhone.replace('@c.us', ''));
+
+    if (numberId) {
+      console.log(`✅ Número verificado: ${phone} -> ${numberId._serialized}`);
+      return numberId._serialized;
+    } else {
+      console.warn(`⚠️  Número no encontrado en WhatsApp: ${phone}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`❌ Error verificando número ${phone}:`, error.message);
+    return null;
+  }
 }
 
 /**
