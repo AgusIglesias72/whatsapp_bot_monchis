@@ -394,25 +394,36 @@ export function formatPhoneNumber(phone) {
 }
 
 /**
- * Verifica si un número/contacto existe en WhatsApp
- * Retorna el formato básico que WhatsApp Web manejará internamente
+ * Verifica si un número/contacto existe en WhatsApp y obtiene su chat
+ * Usa getChatById que maneja correctamente tanto @c.us como @lid
  */
 export async function verifyPhoneNumber(client, phone) {
   try {
     const formattedPhone = formatPhoneNumber(phone);
+    const phoneOnly = formattedPhone.replace('@c.us', '');
 
-    // Intentar obtener el numberId para verificar si existe
-    const numberId = await client.getNumberId(formattedPhone.replace('@c.us', ''));
+    // Verificar si el número existe en WhatsApp
+    const numberId = await client.getNumberId(phoneOnly);
 
-    if (numberId) {
-      // Siempre usar el formato básico del número sin @
-      // WhatsApp Web manejará internamente si es @c.us o @lid
-      const phoneOnly = formattedPhone.replace('@c.us', '');
-      console.log(`✅ Número verificado: ${phone} -> usando ${phoneOnly}`);
-      return phoneOnly; // Retornar solo el número sin sufijo
-    } else {
+    if (!numberId) {
       console.warn(`⚠️  Número no encontrado en WhatsApp: ${phone}`);
       return null;
+    }
+
+    // Usar el ID serializado que retorna getNumberId
+    // Este ya tiene el formato correcto (@c.us o @lid)
+    const chatId = numberId._serialized;
+
+    console.log(`✅ Número verificado: ${phone} -> ${chatId}`);
+
+    // Intentar obtener el chat para asegurarnos que existe
+    try {
+      await client.getChatById(chatId);
+      return chatId;
+    } catch (chatError) {
+      // Si el chat no existe, crear uno enviando el mensaje directamente
+      console.log(`⚠️  Chat no existe aún, se creará al enviar el mensaje: ${chatId}`);
+      return chatId;
     }
   } catch (error) {
     console.error(`❌ Error verificando número ${phone}:`, error.message);
