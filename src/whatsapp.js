@@ -169,6 +169,11 @@ export async function initializeClient(clientId, onMessageReceived) {
         '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       ]
     },
+    // ✅ NUEVO: Cachear versión de WhatsApp Web para estabilidad
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+    },
     qrTimeoutMs: 0,              // Sin timeout de QR
     authTimeoutMs: 0,            // Sin timeout de autenticación (crítico para Railway)
     takeoverOnConflict: true,    // Manejar conflictos de sesión automáticamente
