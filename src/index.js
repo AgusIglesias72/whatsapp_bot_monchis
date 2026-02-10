@@ -17,7 +17,6 @@ import {
 } from './whatsapp.js';
 import { handleIncomingMessage } from './messageHandler.js';
 import { generateContextualMessage, isValidMessageType, getValidMessageTypes, getMessageTypeInfo } from './messageTemplates.js';
-import mongoose from 'mongoose';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -920,7 +919,7 @@ app.post('/restart/:botId', verifyApiKey, async (req, res) => {
       timestamp: new Date().toISOString(),
       notes: [
         'El bot se está inicializando en segundo plano',
-        'Si tiene sesión guardada en MongoDB → se reconectará automáticamente',
+        'Si tiene sesión guardada localmente → se reconectará automáticamente',
         'Si NO tiene sesión → generará un QR (verificar en /qr/' + botId + ')',
         'Esto puede tardar 10-30 segundos'
       ]
@@ -953,35 +952,23 @@ app.post('/restart/:botId/fresh', verifyApiKey, async (req, res) => {
     }
     
     console.log(`🔄 Reinicio COMPLETO de ${botId} (sin sesión)...`);
-    
+
     await closeClient(botId);
-    
-    const db = mongoose.connection.db;
-    
-    const filesCollection = `whatsapp-RemoteAuth-${botId}.files`;
-    const chunksCollection = `whatsapp-RemoteAuth-${botId}.chunks`;
-    
-    await db.collection(filesCollection).drop().catch(() => {
-      console.log(`⚠️  Colección ${filesCollection} no existe o ya fue eliminada`);
-    });
-    
-    await db.collection(chunksCollection).drop().catch(() => {
-      console.log(`⚠️  Colección ${chunksCollection} no existe o ya fue eliminada`);
-    });
-    
-    console.log(`🗑️  Sesión de MongoDB eliminada`);
-    
+
+    console.log(`⚠️  NOTA: Con LocalAuth, la sesión persiste en disco local (.wwebjs_auth/)`);
+    console.log(`⚠️  Para eliminar la sesión completamente, detén el servidor y elimina .wwebjs_auth/${botId}/`);
+
     await new Promise(resolve => setTimeout(resolve, 2000));
-    
+
     await initializeClient(botId, (message, clientId) => {
       handleIncomingMessage(message, VERCEL_WEBHOOK_URL);
     });
-    
+
     res.json({
       success: true,
-      message: `Bot ${botId} reiniciado sin sesión`,
+      message: `Bot ${botId} reiniciado`,
       botId: botId,
-      note: 'Se generará un NUEVO QR - la sesión anterior fue eliminada',
+      note: 'La sesión local persiste. Si quieres QR nuevo, elimina .wwebjs_auth/${botId}/',
       qrUrl: `/qr/${botId}`,
       timestamp: new Date().toISOString()
     });

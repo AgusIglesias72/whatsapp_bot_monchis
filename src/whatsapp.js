@@ -1,7 +1,7 @@
 /**
- * Multi-Client WhatsApp Manager - OPTIMIZADO
+ * Multi-Client WhatsApp Manager - LOCAL STORAGE
  * Versión mejorada con:
- * - Backup cada 6h (en lugar de 5min)
+ * - Almacenamiento LOCAL en lugar de MongoDB
  * - Reconexión automática con backoff exponencial
  * - Sin webVersionCache fijo
  * - Args optimizados de Chromium
@@ -9,10 +9,8 @@
  */
 
 import pkg from 'whatsapp-web.js';
-const { Client, RemoteAuth } = pkg;
+const { Client, LocalAuth } = pkg;
 import qrcode from 'qrcode-terminal';
-import { MongoStore } from 'wwebjs-mongo';
-import mongoose from 'mongoose';
 import os from 'os';
 
 // Maps para gestión de clientes
@@ -25,25 +23,6 @@ const clientsQR = new Map();
 const reconnectionAttempts = new Map(); // { clientId: { count: 0, lastAttempt: Date } }
 const MAX_RECONNECTION_ATTEMPTS = 5;
 const RECONNECTION_DELAYS = [10000, 30000, 60000, 120000, 300000]; // 10s, 30s, 1m, 2m, 5m
-
-let mongooseConnected = false;
-
-/**
- * Conecta a MongoDB (solo una vez)
- */
-async function connectMongoDB() {
-  if (mongooseConnected) return;
-  
-  try {
-    console.log('🔌 Conectando a MongoDB con Mongoose...');
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('✅ Conectado a MongoDB exitosamente');
-    mongooseConnected = true;
-  } catch (error) {
-    console.error('❌ Error conectando a MongoDB:', error);
-    throw new Error('No se pudo conectar a MongoDB');
-  }
-}
 
 /**
  * ✅ MEJORADO: Configuración optimizada de Puppeteer/Chromium
@@ -163,7 +142,7 @@ function resetReconnectionAttempts(clientId) {
 }
 
 /**
- * Inicializa un cliente de WhatsApp
+ * Inicializa un cliente de WhatsApp con LocalAuth
  */
 export async function initializeClient(clientId, onMessageReceived) {
   if (clients.has(clientId)) {
@@ -175,16 +154,12 @@ export async function initializeClient(clientId, onMessageReceived) {
   console.log(`🤖 Inicializando bot: ${clientId}`);
   console.log(`${'='.repeat(50)}\n`);
 
-  await connectMongoDB();
-
-  const store = new MongoStore({ mongoose: mongoose });
   const puppeteerConfig = getPuppeteerConfig();
 
   const client = new Client({
-    authStrategy: new RemoteAuth({
+    authStrategy: new LocalAuth({
       clientId: clientId,
-      store: store,
-      backupSyncIntervalMs: 300000 // 5 minutos (recomendado por wwebjs.dev)
+      dataPath: './.wwebjs_auth'
     }),
     puppeteer: {
       ...puppeteerConfig,
@@ -234,22 +209,18 @@ export async function initializeClient(clientId, onMessageReceived) {
   });
 
   client.on('authenticated', () => {
+    clientsSessionSaved.set(clientId, true);
+    console.log(`\n${'='.repeat(60)}`);
     console.log(`🔓 ${clientId} autenticado exitosamente`);
-    console.log(`⏳ ${clientId} - Esperando ~1 minuto para que la sesión se guarde en MongoDB...`);
+    console.log(`💾 ✅ SESIÓN GUARDADA: ${clientId}`);
+    console.log(`📍 Ubicación: Almacenamiento local (.wwebjs_auth/)`);
+    console.log(`✨ ${clientId} persistirá entre reinicios`);
+    console.log(`⚠️  IMPORTANTE: La sesión se perderá en cada deploy`);
+    console.log(`${'='.repeat(60)}\n`);
   });
 
   client.on('auth_failure', (msg) => {
     console.error(`❌ Error de autenticación en ${clientId}:`, msg);
-  });
-
-  client.on('remote_session_saved', () => {
-    clientsSessionSaved.set(clientId, true);
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`💾 ✅ SESIÓN GUARDADA: ${clientId}`);
-    console.log(`📍 Ubicación: MongoDB`);
-    console.log(`🔄 Backup automático cada 5 minutos`);
-    console.log(`✨ ${clientId} persistirá entre reinicios`);
-    console.log(`${'='.repeat(60)}\n`);
   });
 
   client.on('message', async (message) => {
@@ -306,7 +277,7 @@ export async function initializeClient(clientId, onMessageReceived) {
   clientsReady.set(clientId, false);
   clientsSessionSaved.set(clientId, false);
 
-  console.log(`🚀 Inicializando ${clientId} con RemoteAuth (backup cada 6h)...`);
+  console.log(`🚀 Inicializando ${clientId} con LocalAuth...`);
   client.initialize();
 
   return client;
@@ -466,15 +437,12 @@ export async function closeClient(clientId) {
  */
 export async function closeAllClients() {
   const clientIds = Array.from(clients.keys());
-  
+
   for (const clientId of clientIds) {
     await closeClient(clientId);
   }
-  
-  if (mongooseConnected) {
-    await mongoose.connection.close();
-    console.log('👋 Desconectado de MongoDB');
-  }
+
+  console.log('👋 Todos los clientes cerrados');
 }
 
 /**
@@ -493,7 +461,6 @@ export function getSystemStatus() {
       lastAttempt: data.lastAttempt,
       maxReached: data.count >= MAX_RECONNECTION_ATTEMPTS
     })),
-    mongoConnected: mongooseConnected,
     uptime: process.uptime(),
     memory: process.memoryUsage()
   };

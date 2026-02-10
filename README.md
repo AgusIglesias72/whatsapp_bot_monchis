@@ -10,7 +10,7 @@ Bot de WhatsApp automatizado para envío de mensajes y gestión de conversacione
 - ✅ Auto-respuestas personalizables
 - ✅ Webhooks a tu backend de Vercel
 - ✅ API REST para integración
-- ✅ Persistencia de sesión de WhatsApp
+- ✅ Persistencia de sesión de WhatsApp con LocalAuth (almacenamiento local)
 
 ## 🚀 Instalación Local
 
@@ -281,7 +281,7 @@ Los números deben incluir el código de país SIN el símbolo `+`:
 ### El bot se desconecta constantemente
 - Railway podría estar reiniciando el servicio
 - Verifica los logs en Railway
-- Considera usar RemoteAuth con base de datos para persistencia
+- La sesión se guarda localmente, pero se perderá en cada deploy
 
 ### No llegan mensajes al webhook
 - Verifica que `VERCEL_WEBHOOK_URL` esté correctamente configurada
@@ -300,7 +300,7 @@ Los números deben incluir el código de país SIN el símbolo `+`:
 2. **Contenido spam**: Evita enviar contenido repetitivo
 3. **Opt-in**: Solo envía mensajes a personas que han aceptado recibirlos
 4. **Números no registrados**: Maneja errores cuando el número no existe
-5. **Persistencia**: Considera usar RemoteAuth con MongoDB para producción
+5. **Persistencia**: La sesión se guarda localmente en `.wwebjs_auth/`. Se perderá en cada deploy de Railway. Escanea el QR nuevamente después de cada deploy.
 
 ## 📄 Licencia
 

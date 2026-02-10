@@ -1,7 +1,7 @@
 {
     "name": "whatsapp-bot-railway",
-    "version": "2.0.0",
-    "description": "Bot de WhatsApp para Monchis Drivers - Envío automático de mensajes contextuales con RemoteAuth",
+    "version": "3.0.0",
+    "description": "Bot de WhatsApp para Monchis Drivers - Envío automático de mensajes contextuales con LocalAuth",
     "type": "module",
     "main": "src/index.js",
     "scripts": {
@@ -13,8 +13,7 @@
         "bot",
         "automation",
         "monchis",
-        "remoteauth",
-        "mongodb"
+        "localauth"
     ],
     "author": "Monchis Drivers",
     "license": "MIT",
@@ -22,10 +21,7 @@
         "cors": "^2.8.5",
         "dotenv": "^16.3.1",
         "express": "^4.18.2",
-        "mongodb": "^6.3.0",
-        "mongoose": "^8.20.0",
         "qrcode-terminal": "^0.12.0",
-        "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js#main",
-        "wwebjs-mongo": "^1.1.0"
+        "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js#main"
     }
 }
