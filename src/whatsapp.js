@@ -202,14 +202,21 @@ export async function initializeClient(clientId, onMessageReceived) {
     console.log(`✅ ${clientId} CONECTADO Y LISTO!`);
     console.log(`📞 Conectado como: ${client.info.pushname}`);
     console.log(`📱 Número: ${client.info.wid.user}`);
+    console.log(`🆔 Platform: ${client.info.platform}`);
     console.log(`💾 ✅ SESIÓN GUARDADA: ${clientId}`);
     console.log(`📍 Ubicación: Almacenamiento local (.wwebjs_auth/)`);
     console.log(`⚠️  IMPORTANTE: La sesión se perderá en cada deploy`);
-    console.log(`${'='.repeat(60)}\n`);
+    console.log(`${'='.repeat(60)}`);
 
     clientsReady.set(clientId, true);
     clientsSessionSaved.set(clientId, true);
     clientsQR.delete(clientId);
+
+    console.log(`📊 Estado del cliente ${clientId}:`);
+    console.log(`   - Ready: ${clientsReady.get(clientId)}`);
+    console.log(`   - Session Saved: ${clientsSessionSaved.get(clientId)}`);
+    console.log(`   - Has QR: ${clientsQR.has(clientId)}`);
+    console.log(`${'='.repeat(60)}\n`);
 
     // ✅ NUEVO: Resetear contadores si se conectó exitosamente
     resetReconnectionAttempts(clientId);
@@ -221,20 +228,24 @@ export async function initializeClient(clientId, onMessageReceived) {
 
   client.on('message', async (message) => {
     const isGroup = message.from.includes('@g.us');
-    
-    console.log(`📨 Mensaje recibido en ${clientId}:`, {
-      from: message.from,
-      fromName: message._data.notifyName || 'Desconocido',
-      body: message.body,
-      isGroup: isGroup
-    });
+
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`📨 MENSAJE RECIBIDO EN ${clientId}`);
+    console.log(`De: ${message.from}`);
+    console.log(`Nombre: ${message._data.notifyName || 'Desconocido'}`);
+    console.log(`Contenido: ${message.body}`);
+    console.log(`Es grupo: ${isGroup}`);
+    console.log(`Timestamp: ${new Date().toISOString()}`);
+    console.log(`${'='.repeat(60)}\n`);
 
     if (onMessageReceived) {
       try {
         await onMessageReceived(message, clientId);
       } catch (error) {
-        console.error(`Error en callback de ${clientId}:`, error);
+        console.error(`❌ Error en callback de ${clientId}:`, error);
       }
+    } else {
+      console.log(`⚠️  No hay callback de mensaje configurado para ${clientId}`);
     }
   });
 
