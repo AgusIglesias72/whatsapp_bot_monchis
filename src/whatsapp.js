@@ -192,12 +192,48 @@ export async function initializeClient(clientId, onMessageReceived) {
     });
   });
 
+  // ✅ NUEVO: Timeout para detectar si ready no se dispara
+  let readyTimeout = null;
+
   client.on('authenticated', () => {
-    console.log(`🔓 ${clientId} autenticado exitosamente`);
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`🔓 ${clientId} AUTENTICADO EXITOSAMENTE`);
     console.log(`💾 Sesión detectada en almacenamiento local (.wwebjs_auth/)`);
+    console.log(`⏳ Esperando evento 'ready'...`);
+    console.log(`${'='.repeat(60)}\n`);
+
+    // ✅ Timeout de 60 segundos para detectar si ready nunca se dispara
+    readyTimeout = setTimeout(() => {
+      if (!clientsReady.get(clientId)) {
+        console.error(`\n⚠️  ADVERTENCIA: ${clientId} autenticado pero 'ready' no se disparó en 60s`);
+        console.error(`⚠️  Esto puede indicar un problema con WhatsApp Web o la conexión`);
+        console.error(`⚠️  Estado actual:`);
+        console.error(`   - Authenticated: ✅`);
+        console.error(`   - Ready: ❌`);
+        console.error(`   - Session Saved: ${clientsSessionSaved.get(clientId) ? '✅' : '❌'}`);
+        console.error(`\n💡 Intenta:`);
+        console.error(`   1. Reiniciar el bot desde el dashboard`);
+        console.error(`   2. Escanear el QR nuevamente`);
+        console.error(`   3. Verificar los logs de Railway\n`);
+      }
+    }, 60000);
+  });
+
+  client.on('loading_screen', (percent, message) => {
+    console.log(`📱 ${clientId} - Cargando WhatsApp Web: ${percent}% - ${message}`);
+  });
+
+  client.on('change_state', (state) => {
+    console.log(`🔄 ${clientId} - Cambio de estado: ${state}`);
   });
 
   client.on('ready', () => {
+    // ✅ Limpiar timeout ya que ready se disparó
+    if (readyTimeout) {
+      clearTimeout(readyTimeout);
+      readyTimeout = null;
+    }
+
     console.log(`\n${'='.repeat(60)}`);
     console.log(`✅ ${clientId} CONECTADO Y LISTO!`);
     console.log(`📞 Conectado como: ${client.info.pushname}`);
@@ -226,7 +262,8 @@ export async function initializeClient(clientId, onMessageReceived) {
     console.error(`❌ Error de autenticación en ${clientId}:`, msg);
   });
 
-  client.on('message', async (message) => {
+  // ✅ IMPORTANTE: Escuchar AMBOS eventos de mensajes por compatibilidad
+  const handleMessage = async (message) => {
     const isGroup = message.from.includes('@g.us');
 
     console.log(`\n${'='.repeat(60)}`);
@@ -247,7 +284,10 @@ export async function initializeClient(clientId, onMessageReceived) {
     } else {
       console.log(`⚠️  No hay callback de mensaje configurado para ${clientId}`);
     }
-  });
+  };
+
+  client.on('message', handleMessage);
+  client.on('message_create', handleMessage);
 
   // ✅ MEJORADO: Manejo de desconexión con reconexión automática
   client.on('disconnected', async (reason) => {
@@ -270,14 +310,6 @@ export async function initializeClient(clientId, onMessageReceived) {
     }
   });
 
-  client.on('loading_screen', (percent, message) => {
-    console.log(`⏳ ${clientId} cargando... ${percent}% - ${message}`);
-  });
-
-  // ✅ NUEVO: Detectar cambios de estado
-  client.on('change_state', (state) => {
-    console.log(`🔄 ${clientId} - Cambio de estado: ${state}`);
-  });
 
   // Guardar cliente
   clients.set(clientId, client);
