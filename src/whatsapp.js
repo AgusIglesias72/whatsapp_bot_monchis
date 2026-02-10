@@ -192,31 +192,27 @@ export async function initializeClient(clientId, onMessageReceived) {
     });
   });
 
-  client.on('ready', () => {
-    console.log(`✅ ${clientId} conectado y listo!`);
-    console.log(`📞 Conectado como: ${client.info.pushname}`);
-    console.log(`📱 Número: ${client.info.wid.user}`);
-    
-    clientsReady.set(clientId, true);
-    clientsQR.delete(clientId);
-    
-    // ✅ NUEVO: Resetear contadores si se conectó exitosamente
-    resetReconnectionAttempts(clientId);
-    
-    if (!clientsSessionSaved.get(clientId)) {
-      console.log(`⏳ Esperando que la sesión de ${clientId} se guarde...`);
-    }
+  client.on('authenticated', () => {
+    console.log(`🔓 ${clientId} autenticado exitosamente`);
+    console.log(`💾 Sesión detectada en almacenamiento local (.wwebjs_auth/)`);
   });
 
-  client.on('authenticated', () => {
-    clientsSessionSaved.set(clientId, true);
+  client.on('ready', () => {
     console.log(`\n${'='.repeat(60)}`);
-    console.log(`🔓 ${clientId} autenticado exitosamente`);
+    console.log(`✅ ${clientId} CONECTADO Y LISTO!`);
+    console.log(`📞 Conectado como: ${client.info.pushname}`);
+    console.log(`📱 Número: ${client.info.wid.user}`);
     console.log(`💾 ✅ SESIÓN GUARDADA: ${clientId}`);
     console.log(`📍 Ubicación: Almacenamiento local (.wwebjs_auth/)`);
-    console.log(`✨ ${clientId} persistirá entre reinicios`);
     console.log(`⚠️  IMPORTANTE: La sesión se perderá en cada deploy`);
     console.log(`${'='.repeat(60)}\n`);
+
+    clientsReady.set(clientId, true);
+    clientsSessionSaved.set(clientId, true);
+    clientsQR.delete(clientId);
+
+    // ✅ NUEVO: Resetear contadores si se conectó exitosamente
+    resetReconnectionAttempts(clientId);
   });
 
   client.on('auth_failure', (msg) => {
