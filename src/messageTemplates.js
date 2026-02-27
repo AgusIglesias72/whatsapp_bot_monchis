@@ -98,7 +98,7 @@ Vimos que comenzaste tu postulación en Monchis Drivers pero quedó incompleta. 
     case 'equipment_payment':
       return baseIntro.replace('quedó incompleta', 'está casi completa') +
         `¡Estás a un paso de completar tu postulación! 🚗\n\n` +
-        `Solo falta confirmar el pago inicial del equipo (Gs. 100.000) que incluye mochila térmica, remera y porta vasos.\n\n` +
+        `Solo falta confirmar el pago inicial del equipo (Gs. 200.000) que incluye mochila térmica, remera y porta vasos.\n\n` +
         `💵 *Podés abonar:*\n` +
         `• Por transferencia antes de la capacitación\n` +
         `• Presencialmente el día de la capacitación\n\n` +
@@ -371,7 +371,7 @@ function generateCapacitationReminderMessage(firstName, metadata) {
 - Cédula de identidad
 - Certificado de Antecedentes Policiales *impreso*
 
-💰 *Pago inicial:* Gs. 100.000 por el kit (mochila, remera y portavasos).
+💰 *Pago inicial:* Gs. 200.000 por el kit (mochila, remera y portavasos).
 ⚠️ *Solo aceptamos transferencia o tarjeta (POS). NO efectivo.*
 
 📱 *Tip:* Andá descargando la app *Monchis Express* para ir adelantando.
@@ -393,7 +393,7 @@ Te recordamos que mañana tenés ${eventTitle}.
 - Cédula de identidad
 - Certificado de Antecedentes Penales *impreso*
 
-💰 *Pago inicial:* Gs. 100.000 por el kit (mochila, remera y portavasos).
+💰 *Pago inicial:* Gs. 200.000 por el kit (mochila, remera y portavasos).
 ⚠️ *Solo aceptamos transferencia o tarjeta (POS). NO efectivo.*
 
 📱 *Tip:* Andá descargando la app *Monchis Express* para ir adelantando.
